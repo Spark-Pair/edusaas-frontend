@@ -21,6 +21,7 @@ const Students = () => {
     firstName: '', lastName: '', rollNo: '', classId: '',
     dob: '', gender: 'male', guardian: '', contact: '', address: '', status: 'active'
   });
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     fetchClasses();
@@ -86,6 +87,8 @@ const Students = () => {
       return;
     }
 
+    setCreating(true);
+
     const submitData = { ...formData };
     if (!submitData.dob) delete submitData.dob;
 
@@ -101,6 +104,8 @@ const Students = () => {
       if (selectedClass) fetchStudents();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Operation failed');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -287,7 +292,7 @@ const Students = () => {
           )}
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" onClick={closeModal} className="flex-1">Cancel</Button>
-            <Button type="submit" className="flex-1">{editingStudent ? 'Update' : 'Create'}</Button>
+            <Button type="submit" className="flex-1" disabled={creating}>{editingStudent ? (creating ? 'Updating...' : 'Update') : creating ? 'Creating...' : 'Create'}</Button>
           </div>
         </form>
       </Modal>

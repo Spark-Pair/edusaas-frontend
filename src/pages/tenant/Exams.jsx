@@ -14,6 +14,8 @@ const Exams = () => {
   const [formData, setFormData] = useState({
     name: '', classId: '', date: '', subjects: [{ name: '', maxMarks: 100 }]
   });
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -42,6 +44,8 @@ const Exams = () => {
       return;
     }
 
+    setCreating(true);
+
     try {
       await tenantAPI.createExam({
         ...formData,
@@ -53,6 +57,8 @@ const Exams = () => {
       fetchData();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create exam');
+    } finally{
+      setCreating(false);
     }
   };
 
@@ -79,6 +85,7 @@ const Exams = () => {
   };
 
   const handleSaveMarks = async () => {
+    setSaving(true);
     try {
       await tenantAPI.saveMarks({
         examId: selectedExam._id,
@@ -88,6 +95,8 @@ const Exams = () => {
       setShowMarksModal(false);
     } catch (error) {
       toast.error('Failed to save marks');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -209,7 +218,7 @@ const Exams = () => {
           </div>
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" onClick={() => setShowExamModal(false)} className="flex-1">Cancel</Button>
-            <Button type="submit" className="flex-1">Create</Button>
+            <Button type="submit" className="flex-1" disabled={creating}>{creating ? 'Creating...' : 'Create'}</Button>
           </div>
         </form>
       </Modal>
@@ -261,7 +270,7 @@ const Exams = () => {
         </div>
         <div className="flex gap-3 mt-4">
           <Button variant="outline" onClick={() => setShowMarksModal(false)} className="flex-1">Cancel</Button>
-          <Button onClick={handleSaveMarks} className="flex-1">Save Marks</Button>
+          <Button onClick={handleSaveMarks} className="flex-1" disabled={saving}>{saving ? 'Saving...' : 'Save Marks'}</Button>
         </div>
       </Modal>
     </div>

@@ -8,6 +8,7 @@ const Classes = () => {
   const [classes, setClasses] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({ name: '', section: '' });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchClasses();
@@ -30,6 +31,7 @@ const Classes = () => {
       toast.error('Class name is required');
       return;
     }
+    setSaving(true);
     try {
       await tenantAPI.createClass(formData);
       toast.success('Class created!');
@@ -38,6 +40,8 @@ const Classes = () => {
       fetchClasses();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create class');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -115,7 +119,7 @@ const Classes = () => {
           />
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" onClick={() => setShowModal(false)} className="flex-1">Cancel</Button>
-            <Button type="submit" className="flex-1">Create</Button>
+            <Button type="submit" className="flex-1" disabled={saving}>{saving ? 'Creating...' : 'Create'}</Button>
           </div>
         </form>
       </Modal>

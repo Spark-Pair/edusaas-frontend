@@ -10,6 +10,7 @@ const Tenants = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTenant, setEditingTenant] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [togglingId, setTogglingId] = useState(null);
   const [formData, setFormData] = useState({
     schoolName: '',
     username: '',
@@ -38,16 +39,27 @@ const Tenants = () => {
     
     try {
       if (editingTenant) {
-        await adminAPI.updateTenant(editingTenant._id, formData);
+        const { data } = await adminAPI.updateTenant(editingTenant._id, formData);
         toast.success('Tenant updated!');
+        
+        // Update local state with the updated tenant
+        setTenants(prev => prev.map(tenant => 
+          tenant._id === editingTenant._id 
+            ? { ...tenant, ...data.data }
+            : tenant
+        ));
+        
         setShowEditModal(false);
       } else {
-        await adminAPI.createTenant(formData);
+        const { data } = await adminAPI.createTenant(formData);
         toast.success('Tenant created!');
+        
+        // Add new tenant to local state
+        setTenants(prev => [data.data, ...prev]);
+        
         setShowAddModal(false);
       }
       resetForm();
-      fetchTenants();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Operation failed');
     } finally {
@@ -56,12 +68,23 @@ const Tenants = () => {
   };
 
   const handleToggleStatus = async (id) => {
+    setTogglingId(id);
+    
     try {
-      await adminAPI.toggleStatus(id);
+      const { data } = await adminAPI.toggleStatus(id);
+      
+      // Update only the specific tenant in local state
+      setTenants(prev => prev.map(tenant => 
+        tenant._id === id 
+          ? { ...tenant, status: data.data.status }
+          : tenant
+      ));
+      
       toast.success('Status updated!');
-      fetchTenants();
     } catch (error) {
       toast.error('Failed to update status');
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -149,15 +172,24 @@ const Tenants = () => {
                   </td>
                   <td>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="ghost" onClick={() => openEditModal(tenant)}>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        onClick={() => openEditModal(tenant)}
+                        disabled={togglingId === tenant._id}
+                      >
                         Edit
                       </Button>
                       <Button
                         size="sm"
                         variant={tenant.status === 'active' ? 'danger' : 'success'}
                         onClick={() => handleToggleStatus(tenant._id)}
+                        disabled={togglingId === tenant._id}
                       >
-                        {tenant.status === 'active' ? 'Deactivate' : 'Activate'}
+                        {togglingId === tenant._id 
+                          ? 'Processing...' 
+                          : tenant.status === 'active' ? 'Deactivate' : 'Activate'
+                        }
                       </Button>
                     </div>
                   </td>
