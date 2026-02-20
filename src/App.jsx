@@ -12,6 +12,8 @@ import PublicStudentPage from './pages/PublicStudentPage';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminTenants from './pages/admin/Tenants';
+import AdminCards from './pages/admin/Cards';
+import AdminCardEditor from './pages/admin/CardEditor';
 
 // Tenant Pages
 import TenantLayout from './pages/tenant/TenantLayout';
@@ -20,7 +22,6 @@ import TenantClasses from './pages/tenant/Classes';
 import TenantStudents from './pages/tenant/Students';
 import TenantAttendance from './pages/tenant/Attendance';
 import TenantExams from './pages/tenant/Exams';
-import TenantQRCodes from './pages/tenant/QRCodes';
 
 // Protected Route
 const ProtectedRoute = ({ children, role }) => {
@@ -109,6 +110,8 @@ const App = () => {
         }>
           <Route index element={<AdminDashboard />} />
           <Route path="tenants" element={<AdminTenants />} />
+          <Route path="cards" element={<AdminCards />} />
+          <Route path="cards/edit" element={<AdminCardEditor />} />
         </Route>
 
         {/* Tenant Routes */}
@@ -122,7 +125,6 @@ const App = () => {
           <Route path="students" element={<TenantStudents />} />
           <Route path="attendance" element={<TenantAttendance />} />
           <Route path="exams" element={<TenantExams />} />
-          <Route path="qrcodes" element={<TenantQRCodes />} />
         </Route>
 
         {/* Default Redirect */}

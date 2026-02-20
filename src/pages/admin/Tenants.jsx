@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { adminAPI } from '../../services/api';
 import { Card, Button, Modal, Input, Badge, LoadingSpinner } from '../../components/common';
 
 const Tenants = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [tenants, setTenants] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -172,6 +174,14 @@ const Tenants = () => {
                   </td>
                   <td>
                     <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate(`/admin/cards?tenantId=${tenant._id}`)}
+                        disabled={togglingId === tenant._id}
+                      >
+                        Cards
+                      </Button>
                       <Button 
                         size="sm" 
                         variant="ghost" 
