@@ -59,6 +59,7 @@ export const adminAPI = {
   createCardTemplate: (data) => api.post('/admin/card-templates', data),
   updateCardTemplate: (id, data) => api.put(`/admin/card-templates/${id}`, data),
   useCardTemplate: (id, data) => api.post(`/admin/card-templates/${id}/use`, data),
+  deleteCardTemplate: (id) => api.delete(`/admin/card-templates/${id}`),
   createTenant: (data) => api.post('/admin/tenants', data),
   updateTenant: (id, data) => api.put(`/admin/tenants/${id}`, data),
   toggleStatus: (id) => api.patch(`/admin/tenants/${id}/status`)

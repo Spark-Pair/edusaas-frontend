@@ -8,3 +8,4 @@ export { default as Select } from './Select';
 export { default as Table } from './Table';
 export { default as Badge } from './Badge';
 export { default as Card } from './Card';
+export { default as StatusSegmentedControl } from './StatusSegmentedControl';

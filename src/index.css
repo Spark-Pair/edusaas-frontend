@@ -182,3 +182,61 @@ input:focus, select:focus, textarea:focus {
 .modal-content {
   animation: scaleIn 0.2s ease-out;
 }
+
+/* Custom tooltip */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(4px) scale(0.98);
+  background: rgba(15, 23, 42, 0.96);
+  color: #f8fafc;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 500;
+  padding: 6px 8px;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(2, 6, 23, 0.28);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 120;
+  opacity: 0;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+[data-tooltip]::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 3px);
+  transform: translateX(-50%) scale(0.9);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid rgba(15, 23, 42, 0.96);
+  pointer-events: none;
+  z-index: 120;
+  opacity: 0;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:hover::before,
+[data-tooltip]:focus-visible::after,
+[data-tooltip]:focus-visible::before {
+  opacity: 1;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
+[data-tooltip]:hover::before,
+[data-tooltip]:focus-visible::before {
+  transform: translateX(-50%) scale(1);
+}

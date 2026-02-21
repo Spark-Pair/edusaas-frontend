@@ -7,8 +7,11 @@ const Button = ({
   variant = 'primary', 
   size = 'md',
   disabled = false,
+  loading = false,
   className = '',
-  icon = null
+  icon = null,
+  title,
+  ...rest
 }) => {
   const baseClasses = 'font-medium rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed';
   
@@ -31,9 +34,14 @@ const Button = ({
     <button
       type={type}
       onClick={onClick}
-      disabled={disabled}
+      disabled={disabled || loading}
+      data-tooltip={title || undefined}
       className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
+      {...rest}
     >
+      {loading && (
+        <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+      )}
       {icon && icon}
       {children}
     </button>
