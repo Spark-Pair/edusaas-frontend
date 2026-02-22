@@ -2,28 +2,40 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import {
-  AlignEndVertical,
   AlignCenterHorizontal,
   AlignCenterVertical,
-  AlignStartHorizontal,
   AlignEndHorizontal,
+  AlignEndVertical,
+  AlignStartHorizontal,
   AlignStartVertical,
   ArrowLeft,
+  Building2,
+  ChevronsDown,
+  ChevronsUp,
+  ChevronLeft,
   Circle,
   ClipboardPaste,
   Copy,
+  Download,
+  Eye,
   GripHorizontal,
+  History,
   Info,
   Layers,
+  Lock,
+  LockOpen,
   Pencil,
   Pipette,
+  Redo2,
   Save,
   SlidersHorizontal,
   Square,
-  Trash2
+  Trash2,
+  Undo2,
+  Users
 } from 'lucide-react';
 import { adminAPI } from '../../services/api';
-import { Button, Card, Input, LoadingSpinner, Modal } from '../../components/common';
+import { Button, Card, Input, LoadingSpinner, Modal, Select } from '../../components/common';
 
 const DEFAULT_CARD_WIDTH = 360;
 const DEFAULT_CARD_HEIGHT = 584;
@@ -46,11 +58,14 @@ const BLOCKS = [
 const SHORTCUTS = [
   { key: 'Ctrl/Cmd + Click', action: 'Multi-select on canvas/layers' },
   { key: 'Shift + Click', action: 'Multi-select on canvas/layers' },
+  { key: 'Ctrl/Cmd + Z', action: 'Undo last change' },
+  { key: 'Ctrl/Cmd + Shift + Z', action: 'Redo last undone change' },
   { key: 'Ctrl/Cmd + G', action: 'Group selected' },
   { key: 'Ctrl/Cmd + Shift + G', action: 'Ungroup selected group(s)' },
   { key: 'Ctrl/Cmd + C', action: 'Copy selected' },
   { key: 'Ctrl/Cmd + V', action: 'Paste copied' },
   { key: 'Ctrl/Cmd + D', action: 'Duplicate selected' },
+  { key: 'Ctrl/Cmd + E', action: 'Open export modal' },
   { key: 'Ctrl/Cmd + Wheel', action: 'Zoom canvas' },
   { key: 'Double Click', action: 'Enter group from layer/canvas' },
   { key: 'Esc', action: 'Deselect everything' },
@@ -63,15 +78,20 @@ const asNumber = (value, fallback = 0) => {
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const cloneHistoryState = (value) => {
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+};
+const snapshotsEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 const textMeasureCanvas =
   typeof document !== 'undefined' ? document.createElement('canvas') : null;
 
-const measureTextWidth = (text, fontSize, fontWeight) => {
+const measureTextWidth = (text, fontSize, fontWeight, fontFamily = 'sans-serif') => {
   if (!textMeasureCanvas) return Math.max(40, text.length * (fontSize * 0.55));
   const context = textMeasureCanvas.getContext('2d');
   if (!context) return Math.max(40, text.length * (fontSize * 0.55));
-  context.font = `${fontWeight} ${fontSize}px sans-serif`;
+  context.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
   return Math.ceil(context.measureText(text || '').width);
 };
 
@@ -132,38 +152,60 @@ const fitDimensions = (width, height, maxWidth, maxHeight) => {
   return { width: fittedWidth, height: fittedHeight, ratio };
 };
 
+const escapeXml = (value = '') =>
+  String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
 const ALIGNMENT_ACTIONS = [
   {
     key: 'left',
     label: 'Align Left',
-    icon: AlignStartHorizontal
+    icon: AlignStartVertical
   },
   {
     key: 'centerX',
     label: 'Align Center X',
-    icon: AlignCenterHorizontal
+    icon: AlignCenterVertical
   },
   {
     key: 'right',
     label: 'Align Right',
-    icon: AlignEndHorizontal
+    icon: AlignEndVertical
   },
   {
     key: 'top',
     label: 'Align Top',
-    icon: AlignStartVertical
+    icon: AlignStartHorizontal
   },
   {
     key: 'centerY',
     label: 'Align Center Y',
-    icon: AlignCenterVertical
+    icon: AlignCenterHorizontal
   },
   {
     key: 'bottom',
     label: 'Align Bottom',
-    icon: AlignEndVertical
+    icon: AlignEndHorizontal
   }
 ];
+
+const FONT_OPTIONS = [
+  { value: 'Inter, sans-serif', label: 'Inter' },
+  { value: 'Arial, sans-serif', label: 'Arial' },
+  { value: 'Verdana, sans-serif', label: 'Verdana' },
+  { value: '"Trebuchet MS", sans-serif', label: 'Trebuchet MS' },
+  { value: 'Tahoma, sans-serif', label: 'Tahoma' },
+  { value: 'Georgia, serif', label: 'Georgia' },
+  { value: '"Times New Roman", serif', label: 'Times New Roman' },
+  { value: '"Courier New", monospace', label: 'Courier New' }
+];
+
+const INTERACTIVE_BUTTON_CLASS = 'transition-all duration-150 hover:shadow-sm hover:-translate-y-0.5 active:translate-y-0';
+const isPaddingLayout = (layout) => layout !== 'fixed';
 
 const CardEditor = () => {
   const navigate = useNavigate();
@@ -180,6 +222,9 @@ const CardEditor = () => {
   const [templateName, setTemplateName] = useState(templateNameFromQuery);
   const [canvasWidth, setCanvasWidth] = useState(DEFAULT_CARD_WIDTH);
   const [canvasHeight, setCanvasHeight] = useState(DEFAULT_CARD_HEIGHT);
+  const [canvasRadius, setCanvasRadius] = useState(12);
+  const [canvasBorderWidth, setCanvasBorderWidth] = useState(2);
+  const [canvasBorderColor, setCanvasBorderColor] = useState('#94a3b8');
   const [svgMarkup, setSvgMarkup] = useState('');
   const [elements, setElements] = useState([]);
   const [groups, setGroups] = useState({});
@@ -190,30 +235,80 @@ const CardEditor = () => {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showStudentModal, setShowStudentModal] = useState(false);
   const [showSchoolModal, setShowSchoolModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showStudentDetailsModal, setShowStudentDetailsModal] = useState(false);
   const [studentSearch, setStudentSearch] = useState('');
   const [schoolSearch, setSchoolSearch] = useState('');
   const [studentList, setStudentList] = useState([]);
+  const [exportClassSearch, setExportClassSearch] = useState('');
+  const [exportClasses, setExportClasses] = useState([]);
+  const [exportStudents, setExportStudents] = useState([]);
+  const [exportSelectedStudentIds, setExportSelectedStudentIds] = useState([]);
+  const [activeExportClassId, setActiveExportClassId] = useState(null);
+  const [selectedStudentDetails, setSelectedStudentDetails] = useState(null);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [switchingSchool, setSwitchingSchool] = useState(false);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [pendingBack, setPendingBack] = useState(false);
+  const [showCanvasHistory, setShowCanvasHistory] = useState(false);
   const [baselineSignature, setBaselineSignature] = useState('');
   const [clipboard, setClipboard] = useState(null);
   const [dragState, setDragState] = useState(null);
   const [cursorInfo, setCursorInfo] = useState({ inside: false, x: 0, y: 0 });
+  const [historyPast, setHistoryPast] = useState([]);
+  const [historyFuture, setHistoryFuture] = useState([]);
   const cardRef = useRef(null);
   const svgFileInputRef = useRef(null);
   const imageFileInputRef = useRef(null);
+  const historySnapshotRef = useRef(null);
+  const lastCommittedSnapshotRef = useRef(null);
+  const historyDebounceTimerRef = useRef(null);
+  const isHistoryApplyingRef = useRef(false);
 
   const makeSignature = (state = {}) =>
     JSON.stringify({
       name: state.templateName ?? templateName,
       width: state.canvasWidth ?? canvasWidth,
       height: state.canvasHeight ?? canvasHeight,
+      radius: state.canvasRadius ?? canvasRadius,
+      borderWidth: state.canvasBorderWidth ?? canvasBorderWidth,
+      borderColor: state.canvasBorderColor ?? canvasBorderColor,
       svg: state.svgMarkup ?? svgMarkup,
       elements: state.elements ?? elements,
       groups: state.groups ?? groups
     });
+
+  const makeHistorySnapshot = (override = {}) => ({
+    canvasWidth: override.canvasWidth ?? canvasWidth,
+    canvasHeight: override.canvasHeight ?? canvasHeight,
+    canvasRadius: override.canvasRadius ?? canvasRadius,
+    canvasBorderWidth: override.canvasBorderWidth ?? canvasBorderWidth,
+    canvasBorderColor: override.canvasBorderColor ?? canvasBorderColor,
+    svgMarkup: override.svgMarkup ?? svgMarkup,
+    elements: cloneHistoryState(override.elements ?? elements),
+    groups: cloneHistoryState(override.groups ?? groups)
+  });
+
+  const applyHistorySnapshot = (snapshot) => {
+    if (!snapshot) return;
+    isHistoryApplyingRef.current = true;
+    setCanvasWidth(snapshot.canvasWidth);
+    setCanvasHeight(snapshot.canvasHeight);
+    setCanvasRadius(snapshot.canvasRadius);
+    setCanvasBorderWidth(snapshot.canvasBorderWidth);
+    setCanvasBorderColor(snapshot.canvasBorderColor);
+    setSvgMarkup(snapshot.svgMarkup || '');
+    setElements(cloneHistoryState(snapshot.elements || []));
+    setGroups(cloneHistoryState(snapshot.groups || {}));
+    setSelectedIds([]);
+    setSelectedGroupIds([]);
+    setExpandedGroupId(null);
+    setTimeout(() => {
+      isHistoryApplyingRef.current = false;
+    }, 0);
+  };
 
   useEffect(() => {
     const handleWheel = (event) => {
@@ -267,21 +362,56 @@ const CardEditor = () => {
         const nextName = templateData.name || templateNameFromQuery;
         const nextWidth = Number(templateData.width) || DEFAULT_CARD_WIDTH;
         const nextHeight = Number(templateData.height) || DEFAULT_CARD_HEIGHT;
+        const nextRadius = Number(templateData.borderRadius) || 12;
+        const nextBorderWidth = Number.isFinite(Number(templateData.borderWidth))
+          ? Math.max(0, Number(templateData.borderWidth))
+          : 2;
+        const nextBorderColor = templateData.borderColor || '#94a3b8';
         const nextSvg = templateData.baseSvgMarkup || '';
-        const nextElements = Array.isArray(templateData.elements) ? templateData.elements : [];
+        const nextElements = Array.isArray(templateData.elements)
+          ? templateData.elements.map((item) => ({
+            ...item,
+            textLayout: item.kind === 'text' ? (item.textLayout === 'fixed' ? 'fixed' : 'dynamic') : item.textLayout,
+            locked: Boolean(item.locked)
+          }))
+          : [];
         const nextGroups = templateData.groups && typeof templateData.groups === 'object' ? templateData.groups : {};
 
         setTemplateName(nextName);
         setCanvasWidth(nextWidth);
         setCanvasHeight(nextHeight);
+        setCanvasRadius(nextRadius);
+        setCanvasBorderWidth(nextBorderWidth);
+        setCanvasBorderColor(nextBorderColor);
         setSvgMarkup(nextSvg);
         setElements(nextElements);
         setGroups(nextGroups);
+        const nextHistorySnapshot = {
+          canvasWidth: nextWidth,
+          canvasHeight: nextHeight,
+          canvasRadius: nextRadius,
+          canvasBorderWidth: nextBorderWidth,
+          canvasBorderColor: nextBorderColor,
+          svgMarkup: nextSvg,
+          elements: cloneHistoryState(nextElements),
+          groups: cloneHistoryState(nextGroups)
+        };
+        historySnapshotRef.current = nextHistorySnapshot;
+        lastCommittedSnapshotRef.current = cloneHistoryState(nextHistorySnapshot);
+        if (historyDebounceTimerRef.current) {
+          clearTimeout(historyDebounceTimerRef.current);
+          historyDebounceTimerRef.current = null;
+        }
+        setHistoryPast([]);
+        setHistoryFuture([]);
         setBaselineSignature(
           JSON.stringify({
             name: nextName,
             width: nextWidth,
             height: nextHeight,
+            radius: nextRadius,
+            borderWidth: nextBorderWidth,
+            borderColor: nextBorderColor,
             svg: nextSvg,
             elements: nextElements,
             groups: nextGroups
@@ -312,6 +442,9 @@ const CardEditor = () => {
         name: templateName.trim(),
         width: canvasWidth,
         height: canvasHeight,
+        borderRadius: canvasRadius,
+        borderWidth: canvasBorderWidth,
+        borderColor: canvasBorderColor,
         baseSvgMarkup: svgMarkup || '',
         elements,
         groups
@@ -350,6 +483,25 @@ const CardEditor = () => {
     }
   };
 
+  const loadExportData = async () => {
+    if (!tenantId) return;
+    setExportLoading(true);
+    try {
+      const [classesRes, studentsRes] = await Promise.all([
+        adminAPI.getTenantClasses(tenantId),
+        adminAPI.getTenantStudents(tenantId, { limit: 5000 })
+      ]);
+      setExportClasses(classesRes.data.data || []);
+      setExportStudents(studentsRes.data.data || []);
+    } catch (error) {
+      toast.error('Failed to load export data');
+      setExportClasses([]);
+      setExportStudents([]);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   const filteredSchools = useMemo(() => {
     const query = schoolSearch.trim().toLowerCase();
     if (!query) return allTenants;
@@ -372,6 +524,9 @@ const CardEditor = () => {
         tenantId: nextTenantId,
         width: canvasWidth,
         height: canvasHeight,
+        borderRadius: canvasRadius,
+        borderWidth: canvasBorderWidth,
+        borderColor: canvasBorderColor,
         baseSvgMarkup: svgMarkup || '',
         elements,
         groups
@@ -397,8 +552,114 @@ const CardEditor = () => {
   const selectedGroupFromSingle = selectedElement?.groupId ? groups[selectedElement.groupId] : null;
   const hasUnsavedChanges = useMemo(
     () => makeSignature() !== baselineSignature,
-    [templateName, canvasWidth, canvasHeight, svgMarkup, elements, groups, baselineSignature]
+    [templateName, canvasWidth, canvasHeight, canvasRadius, canvasBorderWidth, canvasBorderColor, svgMarkup, elements, groups, baselineSignature]
   );
+  const editorHistorySignature = useMemo(
+    () =>
+      JSON.stringify({
+        canvasWidth,
+        canvasHeight,
+        canvasRadius,
+        canvasBorderWidth,
+        canvasBorderColor,
+        svgMarkup,
+        elements,
+        groups
+      }),
+    [canvasWidth, canvasHeight, canvasRadius, canvasBorderWidth, canvasBorderColor, svgMarkup, elements, groups]
+  );
+
+  useEffect(() => {
+    const currentSnapshot = makeHistorySnapshot();
+    const previousSnapshot = historySnapshotRef.current;
+
+    if (!previousSnapshot) {
+      historySnapshotRef.current = currentSnapshot;
+      lastCommittedSnapshotRef.current = cloneHistoryState(currentSnapshot);
+      return;
+    }
+
+    if (snapshotsEqual(previousSnapshot, currentSnapshot)) return;
+
+    historySnapshotRef.current = currentSnapshot;
+
+    if (isHistoryApplyingRef.current) {
+      lastCommittedSnapshotRef.current = cloneHistoryState(currentSnapshot);
+      return;
+    }
+
+    if (historyDebounceTimerRef.current) {
+      clearTimeout(historyDebounceTimerRef.current);
+      historyDebounceTimerRef.current = null;
+    }
+
+    historyDebounceTimerRef.current = setTimeout(() => {
+      const latest = historySnapshotRef.current;
+      const lastCommitted = lastCommittedSnapshotRef.current;
+      if (!latest || !lastCommitted) return;
+      if (snapshotsEqual(latest, lastCommitted)) return;
+
+      setHistoryPast((prev) => {
+        const next = [...prev, cloneHistoryState(lastCommitted)];
+        if (next.length > 120) return next.slice(next.length - 120);
+        return next;
+      });
+      setHistoryFuture([]);
+      lastCommittedSnapshotRef.current = cloneHistoryState(latest);
+      historyDebounceTimerRef.current = null;
+    }, 320);
+  }, [editorHistorySignature]);
+
+  useEffect(
+    () => () => {
+      if (historyDebounceTimerRef.current) {
+        clearTimeout(historyDebounceTimerRef.current);
+        historyDebounceTimerRef.current = null;
+      }
+    },
+    []
+  );
+
+  const hasPendingHistoryCommit = useMemo(() => {
+    if (!lastCommittedSnapshotRef.current) return false;
+    return !snapshotsEqual(lastCommittedSnapshotRef.current, makeHistorySnapshot());
+  }, [editorHistorySignature]);
+
+  const undoHistory = () => {
+    if (historyDebounceTimerRef.current) {
+      clearTimeout(historyDebounceTimerRef.current);
+      historyDebounceTimerRef.current = null;
+    }
+
+    const current = makeHistorySnapshot();
+    const committed = lastCommittedSnapshotRef.current;
+    if (committed && !snapshotsEqual(current, committed)) {
+      historySnapshotRef.current = cloneHistoryState(committed);
+      applyHistorySnapshot(committed);
+      return;
+    }
+
+    if (historyPast.length === 0) return;
+    const previous = historyPast[historyPast.length - 1];
+    setHistoryPast((prev) => prev.slice(0, -1));
+    setHistoryFuture((prev) => [...prev, current]);
+    historySnapshotRef.current = cloneHistoryState(previous);
+    applyHistorySnapshot(previous);
+  };
+
+  const redoHistory = () => {
+    if (historyDebounceTimerRef.current) {
+      clearTimeout(historyDebounceTimerRef.current);
+      historyDebounceTimerRef.current = null;
+    }
+    if (historyFuture.length === 0) return;
+    const next = historyFuture[historyFuture.length - 1];
+    const current = makeHistorySnapshot();
+    setHistoryFuture((prev) => prev.slice(0, -1));
+    setHistoryPast((prev) => [...prev, current]);
+    historySnapshotRef.current = cloneHistoryState(next);
+    applyHistorySnapshot(next);
+  };
 
   const handleBack = () => {
     if (!hasUnsavedChanges) {
@@ -456,11 +717,11 @@ const CardEditor = () => {
   };
 
   const getDimensions = (element) => {
-    if (element.kind !== 'text' || element.textLayout !== 'dynamic') {
+    if (element.kind !== 'text' || !isPaddingLayout(element.textLayout)) {
       return { width: element.width, height: element.height };
     }
     const content = syncSourceText(element);
-    const measured = measureTextWidth(content, element.fontSize, element.fontWeight);
+    const measured = measureTextWidth(content, element.fontSize, element.fontWeight, element.fontFamily);
     const width = Math.max(20, measured + (element.paddingX || 0) * 2);
     const height = Math.max(20, Math.ceil(element.fontSize * 1.4) + (element.paddingY || 0) * 2);
     return { width, height };
@@ -564,6 +825,16 @@ const CardEditor = () => {
       .filter(Boolean);
     return [...groupNames, ...layerNames];
   }, [selectedGroupIds, selectedIds, groups, elements]);
+  const canUndo = historyPast.length > 0 || hasPendingHistoryCommit;
+  const canRedo = historyFuture.length > 0;
+  const historyEntries = useMemo(() => {
+    const total = historyPast.length + historyFuture.length + 1;
+    return Array.from({ length: total }, (_, index) => ({
+      id: index + 1,
+      label: `Step ${index + 1}`,
+      current: index === historyPast.length
+    }));
+  }, [historyPast.length, historyFuture.length]);
 
   const handleCanvasMouseMove = (event) => {
     if (!cardRef.current) return;
@@ -615,7 +886,7 @@ const CardEditor = () => {
 
   useEffect(() => {
     const onKeyDown = (event) => {
-      if (showStudentModal || showSchoolModal || showUnsavedModal) return;
+      if (showStudentModal || showSchoolModal || showUnsavedModal || showExportModal || showStudentDetailsModal) return;
       const tag = event.target?.tagName?.toLowerCase();
       const isTypingContext = tag === 'input' || tag === 'textarea' || tag === 'select' || event.target?.isContentEditable;
       if (isTypingContext) return;
@@ -626,6 +897,16 @@ const CardEditor = () => {
           ungroupSelectedElement();
         } else {
           groupSelectedLayers();
+        }
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) {
+          redoHistory();
+        } else {
+          undoHistory();
         }
         return;
       }
@@ -654,6 +935,17 @@ const CardEditor = () => {
         return;
       }
 
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'e') {
+        event.preventDefault();
+        setShowExportModal(true);
+        setExportClassSearch('');
+        setActiveExportClassId(null);
+        if (exportClasses.length === 0 || exportStudents.length === 0) {
+          loadExportData();
+        }
+        return;
+      }
+
       if (event.key === 'Escape') {
         event.preventDefault();
         clearSelection();
@@ -668,7 +960,7 @@ const CardEditor = () => {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedIds, selectedGroupIds, groups, expandedGroupId, selectedElement, saveTemplate, showStudentModal, showSchoolModal, showUnsavedModal, clipboard, elements, selectedMemberIds]);
+  }, [selectedIds, selectedGroupIds, groups, expandedGroupId, selectedElement, saveTemplate, showStudentModal, showSchoolModal, showUnsavedModal, showExportModal, showStudentDetailsModal, clipboard, elements, selectedMemberIds, exportClasses.length, exportStudents.length, historyPast.length, historyFuture.length]);
 
   const createElement = (block, overrides = {}) => {
     const scale = Math.min(canvasWidth / DEFAULT_CARD_WIDTH, canvasHeight / DEFAULT_CARD_HEIGHT);
@@ -696,12 +988,14 @@ const CardEditor = () => {
       color: '#0f172a',
       fontSize: 14,
       fontWeight: 600,
+      fontFamily: 'Inter, sans-serif',
       showFill: false,
       fillColor: '#ffffff',
       showBorder: false,
       borderColor: '#0f172a',
       borderWidth: 1,
       borderRadius: 8,
+      locked: false,
       aspectRatio:
         ['photo', 'logo', 'image'].includes(block.kind) && blockHeight > 0
           ? blockWidth / blockHeight
@@ -788,6 +1082,7 @@ const CardEditor = () => {
   const startDrag = (event, element) => {
     event.preventDefault();
     if (!cardRef.current) return;
+    if (!expandedGroupId && !element.groupId && element.locked) return;
     if (expandedGroupId && (!element.groupId || !isGroupDescendantOf(element.groupId, expandedGroupId))) {
       clearSelection();
       return;
@@ -840,6 +1135,17 @@ const CardEditor = () => {
       if (prev.includes(id)) return prev.filter((entry) => entry !== id);
       return [...prev, id];
     });
+  };
+
+  const toggleLayerLock = (id) => {
+    setElements((prev) =>
+      prev.map((item) => {
+        if (item.id !== id || item.groupId) return item;
+        return { ...item, locked: !item.locked };
+      })
+    );
+    setSelectedIds((prev) => prev.filter((selectedId) => selectedId !== id));
+    setSelectedGroupIds([]);
   };
 
   const clearSelection = () => {
@@ -917,6 +1223,18 @@ const CardEditor = () => {
     );
   };
 
+  const updateSelectedBulk = (patch, predicate = null) => {
+    const idSet = new Set(selectedVisualElementIds);
+    if (idSet.size === 0) return;
+    setElements((prev) =>
+      prev.map((item) => {
+        if (!idSet.has(item.id)) return item;
+        if (typeof predicate === 'function' && !predicate(item)) return item;
+        return { ...item, ...patch };
+      })
+    );
+  };
+
   const alignSelection = (mode, target = 'artboard') => {
     const ids = [...new Set([...selectedIds, ...selectedMemberIds])];
     if (ids.length === 0) return;
@@ -990,7 +1308,12 @@ const CardEditor = () => {
   const renderAlignmentIcon = (Icon) => <Icon className="w-3.5 h-3.5" />;
 
   const groupSelectedLayers = () => {
-    const selectedElementIds = [...new Set(selectedIds)].filter((id) => elements.some((item) => item.id === id));
+    const selectedElementIds = [...new Set(selectedIds)].filter((id) => {
+      const item = elements.find((element) => element.id === id);
+      if (!item) return false;
+      if (!item.groupId && item.locked) return false;
+      return true;
+    });
     const selectedDirectGroupIds = [...new Set(selectedGroupIds)].filter((id) => groups[id]);
     const totalSelected = selectedElementIds.length + selectedDirectGroupIds.length;
     if (totalSelected < 2) {
@@ -1158,6 +1481,7 @@ const CardEditor = () => {
   };
 
   const handleCanvasElementClick = (event, element) => {
+    if (!expandedGroupId && !element.groupId && element.locked) return;
     const isMulti = event.ctrlKey || event.metaKey || event.shiftKey;
     const contextGroupId = getGroupForCanvasContext(element.groupId);
 
@@ -1193,17 +1517,17 @@ const CardEditor = () => {
   };
 
   const renderOverlayElement = (element, meta) => {
-    const border = element.showBorder
-      ? `${Math.max(1, element.borderWidth || 1)}px solid ${element.borderColor}`
-      : 'none';
+    const borderWidth = element.showBorder ? Math.max(1, element.borderWidth || 1) : 0;
+    const borderShadow = borderWidth > 0 ? `0 0 0 ${borderWidth}px ${element.borderColor}` : 'none';
 
     const baseStyle = {
       width: `${meta.width}px`,
       height: `${meta.height}px`,
       borderRadius: `${element.borderRadius || 0}px`,
       background: element.showFill ? element.fillColor : 'transparent',
-      border,
-      boxSizing: 'content-box'
+      border: 'none',
+      boxShadow: borderShadow,
+      boxSizing: 'border-box'
     };
 
     if (element.kind === 'panel') {
@@ -1270,6 +1594,7 @@ const CardEditor = () => {
           color: element.color,
           fontSize: `${element.fontSize}px`,
           fontWeight: element.fontWeight,
+          fontFamily: element.fontFamily || 'Inter, sans-serif',
           textAlign: element.centerX || groups[element.groupId]?.centerX ? 'center' : 'left',
           padding: `${element.paddingY || 0}px ${element.paddingX || 0}px`
         }}
@@ -1289,6 +1614,23 @@ const CardEditor = () => {
     () => [...new Set([...selectedIds, ...selectedMemberIds])],
     [selectedIds, selectedMemberIds]
   );
+  const selectedVisualElements = useMemo(
+    () => selectedVisualElementIds.map((id) => elements.find((item) => item.id === id)).filter(Boolean),
+    [selectedVisualElementIds, elements]
+  );
+  const getCommonValue = (key) => {
+    if (selectedVisualElements.length === 0) return null;
+    const first = selectedVisualElements[0]?.[key];
+    return selectedVisualElements.every((item) => item?.[key] === first) ? first : null;
+  };
+  const commonShowFill = getCommonValue('showFill');
+  const commonShowBorder = getCommonValue('showBorder');
+  const commonBorderWidth = getCommonValue('borderWidth');
+  const commonBorderRadius = getCommonValue('borderRadius');
+  const commonTextColor = getCommonValue('color');
+  const commonFontSize = getCommonValue('fontSize');
+  const commonFontFamily = getCommonValue('fontFamily');
+  const allSelectedAreText = selectedVisualElements.length > 1 && selectedVisualElements.every((item) => item.kind === 'text');
   const multiSelectionBounds = useMemo(() => {
     if (selectedVisualElementIds.length < 2) return null;
     const boxes = selectedVisualElementIds
@@ -1302,6 +1644,9 @@ const CardEditor = () => {
     return { left: minX, top: minY, width: maxX - minX, height: maxY - minY };
   }, [selectedVisualElementIds, renderModel]);
   const ungroupedOrTopLevel = useMemo(() => {
+    const baseLayer = svgMarkup
+      ? [{ id: 'base-svg', name: 'Base SVG', type: 'base', locked: true }]
+      : [];
     const groupRows = Object.values(groups)
       .filter((group) => !group.parentGroupId)
       .map((group) => ({
@@ -1313,8 +1658,8 @@ const CardEditor = () => {
     const singles = elements
       .filter((item) => !item.groupId || !groups[item.groupId])
       .map((item) => ({ ...item, type: 'layer' }));
-    return [...groupRows, ...singles].reverse();
-  }, [elements, groups]);
+    return [...baseLayer, ...[...groupRows, ...singles].reverse()];
+  }, [elements, groups, svgMarkup]);
 
   const nestedLayers = useMemo(() => {
     if (!expandedGroupId || !groups[expandedGroupId]) return [];
@@ -1327,6 +1672,247 @@ const CardEditor = () => {
       .map((item) => ({ ...item, type: 'layer' }));
     return [...childGroups, ...childLayers].reverse();
   }, [expandedGroupId, groups, elements]);
+
+  const studentsByClass = useMemo(() => {
+    const byClass = {};
+    exportStudents.forEach((student) => {
+      const classId = student.classId?._id || student.classId;
+      if (!classId) return;
+      if (!byClass[classId]) byClass[classId] = [];
+      byClass[classId].push(student);
+    });
+    return byClass;
+  }, [exportStudents]);
+
+  const filteredExportClasses = useMemo(() => {
+    const query = exportClassSearch.trim().toLowerCase();
+    if (!query) return exportClasses;
+    return exportClasses.filter((item) => {
+      const name = `${item.name || ''} ${item.section || ''}`.trim().toLowerCase();
+      return name.includes(query);
+    });
+  }, [exportClasses, exportClassSearch]);
+
+  const selectedExportStudents = useMemo(
+    () => exportStudents.filter((student) => exportSelectedStudentIds.includes(student._id)),
+    [exportStudents, exportSelectedStudentIds]
+  );
+  const exportSelectedIdSet = useMemo(() => new Set(exportSelectedStudentIds), [exportSelectedStudentIds]);
+
+  const activeClassStudents = useMemo(
+    () => (activeExportClassId ? (studentsByClass[activeExportClassId] || []) : []),
+    [activeExportClassId, studentsByClass]
+  );
+
+  const openExportModal = async () => {
+    setShowExportModal(true);
+    setExportClassSearch('');
+    setActiveExportClassId(null);
+    if (exportClasses.length === 0 || exportStudents.length === 0) {
+      await loadExportData();
+    }
+  };
+
+  const getClassLabelFromStudent = (student) => {
+    if (!student?.classId) return 'N/A';
+    if (typeof student.classId === 'string') return 'N/A';
+    return `${student.classId.name || ''}${student.classId.section ? ` - ${student.classId.section}` : ''}`.trim() || 'N/A';
+  };
+
+  const toggleExportStudentSelection = (studentId) => {
+    setExportSelectedStudentIds((prev) =>
+      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId]
+    );
+  };
+
+  const selectAllInClass = (classId) => {
+    const ids = (studentsByClass[classId] || []).map((student) => student._id);
+    setExportSelectedStudentIds((prev) => [...new Set([...prev, ...ids])]);
+  };
+
+  const deselectAllInClass = (classId) => {
+    const ids = new Set((studentsByClass[classId] || []).map((student) => student._id));
+    setExportSelectedStudentIds((prev) => prev.filter((id) => !ids.has(id)));
+  };
+
+  const selectAllExportStudents = () => {
+    setExportSelectedStudentIds(exportStudents.map((student) => student._id));
+  };
+
+  const clearAllExportStudents = () => {
+    setExportSelectedStudentIds([]);
+  };
+
+  const buildCardDefaultValues = (student) => ({
+    school_name: tenant?.schoolName || 'School Name',
+    student_name: `${student?.firstName || ''} ${student?.lastName || ''}`.trim() || 'Student Name',
+    roll_no: student?.rollNo || 'N/A',
+    class_name: getClassLabelFromStudent(student)
+  });
+
+  const getTextForExport = (element, values) => {
+    if (element.type === 'text') return element.text || '';
+    return values[element.type] || element.text || '';
+  };
+
+  const getExportDimensions = (element, values) => {
+    if (element.kind !== 'text' || !isPaddingLayout(element.textLayout)) {
+      return { width: element.width, height: element.height };
+    }
+    const content = getTextForExport(element, values);
+    const measured = measureTextWidth(content, element.fontSize, element.fontWeight, element.fontFamily);
+    const width = Math.max(20, measured + (element.paddingX || 0) * 2);
+    const height = Math.max(20, Math.ceil(element.fontSize * 1.4) + (element.paddingY || 0) * 2);
+    return { width, height };
+  };
+
+  const buildExportRenderModel = (student) => {
+    const values = buildCardDefaultValues(student);
+    const byId = {};
+    const groupItems = {};
+
+    elements.forEach((element) => {
+      const dims = getExportDimensions(element, values);
+      const baseLeft = element.centerX ? canvasWidth / 2 - dims.width / 2 : element.x;
+      const entry = { element, ...dims, top: element.y, baseLeft, left: baseLeft };
+      byId[element.id] = entry;
+
+      if (element.groupId && groups[element.groupId]) {
+        const group = groups[element.groupId];
+        entry.top = entry.top + (group.y || 0);
+        entry.left = entry.left + (group.x || 0);
+        if (!groupItems[element.groupId]) groupItems[element.groupId] = [];
+        groupItems[element.groupId].push(entry);
+      }
+    });
+
+    Object.entries(groupItems).forEach(([groupId, items]) => {
+      const groupConfig = groups[groupId];
+      if (!groupConfig?.centerX || items.length === 0) return;
+      const minX = Math.min(...items.map((item) => item.left));
+      const maxX = Math.max(...items.map((item) => item.left + item.width));
+      const center = minX + (maxX - minX) / 2;
+      const delta = canvasWidth / 2 - center;
+      items.forEach((item) => {
+        item.left = item.left + delta;
+      });
+    });
+
+    return { byId, values };
+  };
+
+  const renderElementSvg = (element, meta, student, values) => {
+    const width = meta.width;
+    const height = meta.height;
+    const borderWidth = element.showBorder ? Math.max(1, element.borderWidth || 1) : 0;
+    const rectX = borderWidth ? -borderWidth / 2 : 0;
+    const rectY = borderWidth ? -borderWidth / 2 : 0;
+    const rectW = borderWidth ? width + borderWidth : width;
+    const rectH = borderWidth ? height + borderWidth : height;
+    const fill = element.showFill ? (element.fillColor || '#ffffff') : 'none';
+    const stroke = borderWidth ? (element.borderColor || '#0f172a') : 'none';
+    const radius = Math.max(0, element.borderRadius || 0);
+
+    const rectMarkup = `<rect x="${rectX}" y="${rectY}" width="${rectW}" height="${rectH}" rx="${radius}" ry="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="${borderWidth}" />`;
+
+    if (element.kind === 'panel') {
+      return `${rectMarkup}<text x="${width / 2}" y="${height / 2}" text-anchor="middle" dominant-baseline="middle" font-size="11" font-weight="600" fill="#1d4ed8">Panel</text>`;
+    }
+
+    if (element.kind === 'photo' || element.kind === 'logo' || element.kind === 'image') {
+      const href = element.kind === 'photo'
+        ? student?.studentPhoto
+        : element.kind === 'logo'
+          ? tenant?.schoolLogo
+          : element.imageSrc;
+      if (href) {
+        return `${rectMarkup}<image href="${escapeXml(href)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet" />`;
+      }
+      const fallback = element.kind === 'photo'
+        ? `${(student?.firstName || 'S').charAt(0)}${(student?.lastName || 'T').charAt(0)}`
+        : element.kind === 'logo'
+          ? (tenant?.schoolName || 'Logo')
+          : 'Image';
+      return `${rectMarkup}<text x="${width / 2}" y="${height / 2}" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="600" fill="#334155">${escapeXml(fallback)}</text>`;
+    }
+
+    if (element.kind === 'svg') {
+      const svgData = encodeURIComponent(element.svgMarkup || '');
+      return `${rectMarkup}<image href="data:image/svg+xml;utf8,${svgData}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet" />`;
+    }
+
+    const text = escapeXml(getTextForExport(element, values));
+    const isCentered = element.centerX || groups[element.groupId]?.centerX;
+    const textAnchor = isCentered ? 'middle' : 'start';
+    const textX = isCentered ? width / 2 : (element.paddingX || 0);
+    const textY = (element.paddingY || 0) + (element.fontSize || 14);
+
+    return `${rectMarkup}<text x="${textX}" y="${textY}" text-anchor="${textAnchor}" font-size="${element.fontSize || 14}" font-weight="${element.fontWeight || 600}" font-family="${escapeXml(element.fontFamily || 'Inter, sans-serif')}" fill="${element.color || '#0f172a'}">${text}</text>`;
+  };
+
+  const exportSelectedCardsAsSvg = async () => {
+    if (selectedExportStudents.length === 0) {
+      toast.error('Select at least one student to export');
+      return;
+    }
+    setExporting(true);
+    try {
+      const gap = 24;
+      const totalWidth = selectedExportStudents.length * canvasWidth + (selectedExportStudents.length - 1) * gap;
+      const totalHeight = canvasHeight;
+      const encodedBaseSvg = svgMarkup ? encodeURIComponent(svgMarkup) : '';
+      const cardsMarkup = selectedExportStudents.map((student, index) => {
+        const model = buildExportRenderModel(student);
+        const overlay = elements
+          .map((element) => {
+            const meta = model.byId[element.id];
+            if (!meta) return '';
+            const rotation = (element.rotation || 0) + (groups[element.groupId]?.rotation || 0);
+            const translate = `translate(${meta.left} ${meta.top})`;
+            const rotate = rotation ? ` rotate(${rotation})` : '';
+            return `<g transform="${translate}${rotate}">${renderElementSvg(element, meta, student, model.values)}</g>`;
+          })
+          .join('');
+        const x = index * (canvasWidth + gap);
+        const clipId = `card-clip-${index}`;
+        const baseLayer = encodedBaseSvg
+          ? `<image href="data:image/svg+xml;utf8,${encodedBaseSvg}" x="0" y="0" width="${canvasWidth}" height="${canvasHeight}" preserveAspectRatio="none" />`
+          : '';
+        return `<g transform="translate(${x} 0)">
+          <defs>
+            <clipPath id="${clipId}">
+              <rect x="0" y="0" width="${canvasWidth}" height="${canvasHeight}" rx="${canvasRadius}" ry="${canvasRadius}" />
+            </clipPath>
+          </defs>
+          <rect x="0" y="0" width="${canvasWidth}" height="${canvasHeight}" rx="${canvasRadius}" ry="${canvasRadius}" fill="#ffffff" />
+          <g clip-path="url(#${clipId})">
+            ${baseLayer}
+            ${overlay}
+          </g>
+          ${canvasBorderWidth > 0
+            ? `<rect x="${canvasBorderWidth / 2}" y="${canvasBorderWidth / 2}" width="${Math.max(0, canvasWidth - canvasBorderWidth)}" height="${Math.max(0, canvasHeight - canvasBorderWidth)}" rx="${Math.max(0, canvasRadius - canvasBorderWidth / 2)}" ry="${Math.max(0, canvasRadius - canvasBorderWidth / 2)}" fill="none" stroke="${canvasBorderColor}" stroke-width="${canvasBorderWidth}" />`
+            : ''}
+        </g>`;
+      }).join('');
+
+      const output = `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}">${cardsMarkup}</svg>`;
+      const blob = new Blob([output], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${(templateName || 'cards').replace(/\s+/g, '-').toLowerCase()}-export.svg`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${selectedExportStudents.length} card(s)`);
+      setShowExportModal(false);
+      setActiveExportClassId(null);
+      setExportClassSearch('');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (!tenantId) {
     return (
@@ -1344,9 +1930,9 @@ const CardEditor = () => {
   }
 
   return (
-    <div className="relative h-screen overflow-hidden bg-slate-100 grid grid-rows-[3.5rem_1fr_2.5rem]">
+    <div className="relative h-screen overflow-hidden bg-slate-100 grid grid-rows-[3.5rem_1fr_2.5rem] select-none">
       <div className="h-14 w-full grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 border-b border-slate-200 bg-white">
-        <Button variant="outline" onClick={handleBack} title="Back">
+        <Button variant="outline" onClick={handleBack} title="Back" tooltipDirection="bottom">
           <ArrowLeft className="w-4 h-4" />
           Back
         </Button>
@@ -1357,19 +1943,25 @@ const CardEditor = () => {
             onChange={(e) => setTemplateName(e.target.value)}
             className="h-10 w-full max-w-xl px-4 text-sm border border-slate-300 rounded-lg bg-white"
             placeholder="Template name"
+            data-tooltip="Template name"
+            data-tooltip-direction="bottom"
           />
         </div>
         <div className="flex items-center gap-2">
           {hasUnsavedChanges && (
-            <span className="inline-flex items-center gap-1 text-xs text-amber-600" data-tooltip="Unsaved changes">
+            <span className="inline-flex items-center gap-1 text-xs text-amber-600" data-tooltip="Unsaved changes" data-tooltip-direction="bottom">
               <Circle className="w-3 h-3 fill-current" />
               Unsaved
             </span>
           )}
-        <Button onClick={saveTemplate} loading={saving} disabled={!hasUnsavedChanges} className="inline-flex items-center gap-1.5 h-10 px-4" title={hasUnsavedChanges ? 'Save changes (Ctrl/Cmd+S)' : 'No unsaved changes'}>
-          <Save className="w-4 h-4" />
-          Save
-        </Button>
+          <Button onClick={saveTemplate} loading={saving} disabled={!hasUnsavedChanges} className="inline-flex items-center gap-1.5 h-10 px-4" title={hasUnsavedChanges ? 'Save changes (Ctrl/Cmd+S)' : 'No unsaved changes'} tooltipDirection="bottom">
+            <Save className="w-4 h-4" />
+            Save
+          </Button>
+          <Button variant="outline" onClick={openExportModal} title="Export (Ctrl/Cmd + E)" tooltipDirection="bottom">
+            <Download className="w-4 h-4" />
+            Export
+          </Button>
         </div>
       </div>
 
@@ -1430,7 +2022,8 @@ const CardEditor = () => {
                   <button
                     type="button"
                     onClick={groupSelectedLayers}
-                    className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700"
+                    data-tooltip="Group selected layers (Ctrl/Cmd + G)"
+                    className={`text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 ${INTERACTIVE_BUTTON_CLASS}`}
                   >
                     Group
                   </button>
@@ -1439,14 +2032,15 @@ const CardEditor = () => {
                   <button
                     type="button"
                     onClick={ungroupSelectedElement}
-                    className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700"
+                    data-tooltip="Ungroup selected (Ctrl/Cmd + Shift + G)"
+                    className={`text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 ${INTERACTIVE_BUTTON_CLASS}`}
                   >
                     Ungroup
                   </button>
                 )}
               </div>
             </div>
-            <div className="min-h-0 space-y-1 overflow-auto">
+            <div className="min-h-0 space-y-1">
               {expandedGroupId && groups[expandedGroupId] && (
                 <div className="mb-1">
                   <button
@@ -1455,7 +2049,8 @@ const CardEditor = () => {
                       setExpandedGroupId(null);
                       clearSelection();
                     }}
-                    className="w-full text-left text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700"
+                    data-tooltip="Back to root layers"
+                    className={`w-full text-left text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 ${INTERACTIVE_BUTTON_CLASS}`}
                   >
                     ← Back to all layers
                   </button>
@@ -1478,24 +2073,55 @@ const CardEditor = () => {
                         setExpandedGroupId(row.id);
                         clearSelection();
                       }}
-                      className="w-full text-left"
+                      data-tooltip={`${row.name} (${row.memberCount} layers)`}
+                      className={`w-full text-left ${INTERACTIVE_BUTTON_CLASS}`}
                     >
                       <p className={`font-medium truncate ${selectedGroupIds.includes(row.id) ? 'text-blue-700' : 'text-slate-800'}`}>{row.name}</p>
                       <p className="text-[11px] text-slate-500">{row.memberCount} layers</p>
                     </button>
+                  </div>
+                ) : row.type === 'base' ? (
+                  <div
+                    key={row.id}
+                    className="p-2 rounded border text-sm border-slate-200 bg-slate-50"
+                  >
+                    <div className="w-full text-left truncate flex items-center justify-between gap-2">
+                      <span className="text-slate-700">{row.name}</span>
+                      <Lock className="w-3.5 h-3.5 text-slate-500" />
+                    </div>
                   </div>
                 ) : (
                   <div
                     key={row.id}
                     className={`p-2 rounded border text-sm ${selectedIds.includes(row.id) ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}
                   >
-                    <button
-                      type="button"
-                      onClick={(e) => toggleSelection(row.id, e.ctrlKey || e.metaKey || e.shiftKey)}
-                      className="w-full text-left truncate"
-                    >
-                      {row.layerName || row.label}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          if (row.locked) return;
+                          toggleSelection(row.id, e.ctrlKey || e.metaKey || e.shiftKey);
+                        }}
+                        data-tooltip={row.layerName || row.label}
+                        className={`w-full text-left truncate ${row.locked ? 'text-slate-400 cursor-not-allowed' : ''}`}
+                      >
+                        {row.layerName || row.label}
+                      </button>
+                      {!row.groupId && (
+                        <button
+                          type="button"
+                          onClick={() => toggleLayerLock(row.id)}
+                          data-tooltip={row.locked ? 'Unlock layer' : 'Lock layer'}
+                          className={`shrink-0 w-6 h-6 rounded border border-slate-300 hover:bg-slate-100 inline-flex items-center justify-center ${INTERACTIVE_BUTTON_CLASS}`}
+                        >
+                          {row.locked ? (
+                            <Lock className="w-3.5 h-3.5 text-slate-700" />
+                          ) : (
+                            <LockOpen className="w-3.5 h-3.5 text-slate-700" />
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )
               ))}
@@ -1513,7 +2139,8 @@ const CardEditor = () => {
                         setExpandedGroupId(layer.id);
                         clearSelection();
                       }}
-                      className="w-full text-left"
+                      data-tooltip={`${layer.name} (${layer.memberIds?.length || 0} layers)`}
+                      className={`w-full text-left ${INTERACTIVE_BUTTON_CLASS}`}
                     >
                       <p className={`font-medium truncate ${selectedGroupIds.includes(layer.id) ? 'text-blue-700' : 'text-slate-800'}`}>{layer.name}</p>
                       <p className="text-[11px] text-slate-500">{layer.memberIds?.length || 0} layers</p>
@@ -1527,7 +2154,8 @@ const CardEditor = () => {
                     <button
                       type="button"
                       onClick={(e) => toggleSelection(layer.id, e.ctrlKey || e.metaKey || e.shiftKey)}
-                      className="w-full text-left truncate"
+                      data-tooltip={layer.layerName || layer.label}
+                      className={`w-full text-left truncate ${INTERACTIVE_BUTTON_CLASS}`}
                     >
                       {layer.layerName || layer.label}
                     </button>
@@ -1543,16 +2171,16 @@ const CardEditor = () => {
               )}
             </div>
             <div className="pt-2 mt-2 border-t border-slate-200 grid grid-cols-4 gap-1">
-              <button type="button" onClick={copySelection} className="h-8 rounded border border-slate-300 hover:bg-slate-100 flex items-center justify-center" data-tooltip="Copy (Ctrl/Cmd + C)">
+              <button type="button" onClick={copySelection} className={`h-8 rounded border border-slate-300 hover:bg-slate-100 flex items-center justify-center ${INTERACTIVE_BUTTON_CLASS}`} data-tooltip="Copy (Ctrl/Cmd + C)">
                 <Copy className="w-4 h-4 text-slate-700" />
               </button>
-              <button type="button" onClick={pasteClipboard} className="h-8 rounded border border-slate-300 hover:bg-slate-100 flex items-center justify-center" data-tooltip="Paste (Ctrl/Cmd + V)">
+              <button type="button" onClick={pasteClipboard} className={`h-8 rounded border border-slate-300 hover:bg-slate-100 flex items-center justify-center ${INTERACTIVE_BUTTON_CLASS}`} data-tooltip="Paste (Ctrl/Cmd + V)">
                 <ClipboardPaste className="w-4 h-4 text-slate-700" />
               </button>
-              <button type="button" onClick={duplicateSelection} className="h-8 rounded border border-slate-300 hover:bg-slate-100 flex items-center justify-center" data-tooltip="Duplicate (Ctrl/Cmd + D)">
+              <button type="button" onClick={duplicateSelection} className={`h-8 rounded border border-slate-300 hover:bg-slate-100 flex items-center justify-center ${INTERACTIVE_BUTTON_CLASS}`} data-tooltip="Duplicate (Ctrl/Cmd + D)">
                 <Copy className="w-4 h-4 text-slate-700" />
               </button>
-              <button type="button" onClick={deleteCurrentSelection} className="h-8 rounded border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center" data-tooltip="Delete (Delete)">
+              <button type="button" onClick={deleteCurrentSelection} className={`h-8 rounded border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center ${INTERACTIVE_BUTTON_CLASS}`} data-tooltip="Delete (Delete)">
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
@@ -1560,11 +2188,55 @@ const CardEditor = () => {
         </div>
 
         <Card className="min-h-0 overflow-hidden relative">
-          <div className="absolute top-3 left-3 z-10">
-            <div className="bg-white/90 backdrop-blur border border-slate-200 rounded-full shadow-sm px-3 py-1.5">
-              <p className="text-xs font-medium text-slate-700">Size: {canvasWidth} x {canvasHeight}</p>
+          <div className="absolute top-3 left-3 z-20 flex flex-col items-start gap-2">
+            <div className="bg-white/90 border border-slate-200 rounded-lg shadow-sm px-2 py-1.5">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={undoHistory}
+                  disabled={!canUndo}
+                  data-tooltip="Undo (Ctrl/Cmd + Z)"
+                  className={`w-7 h-7 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed ${INTERACTIVE_BUTTON_CLASS}`}
+                >
+                  <Undo2 className="w-3.5 h-3.5 mx-auto" />
+                </button>
+                <button
+                  type="button"
+                  onClick={redoHistory}
+                  disabled={!canRedo}
+                  data-tooltip="Redo (Ctrl/Cmd + Shift + Z)"
+                  className={`w-7 h-7 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed ${INTERACTIVE_BUTTON_CLASS}`}
+                >
+                  <Redo2 className="w-3.5 h-3.5 mx-auto" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCanvasHistory((prev) => !prev)}
+                  data-tooltip={showCanvasHistory ? 'Hide history' : 'Show history'}
+                  className={`w-7 h-7 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 inline-flex items-center justify-center ${INTERACTIVE_BUTTON_CLASS}`}
+                >
+                  <History className="w-4 h-4" />
+                </button>
+              </div>
             </div>
+
+            {showCanvasHistory && (
+              <div className="w-52 max-h-56 overflow-auto bg-white/95 border border-slate-200 rounded-lg shadow-sm p-2">
+                <p className="text-[11px] font-semibold text-slate-700 mb-1">History</p>
+                <div className="space-y-1">
+                  {historyEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className={`text-xs px-2 py-1 rounded ${entry.current ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}
+                    >
+                      {entry.label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
+
           <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
             <button
               type="button"
@@ -1573,7 +2245,7 @@ const CardEditor = () => {
                 setShowSchoolModal(true);
               }}
               data-tooltip="Change school"
-              className="bg-white/90 backdrop-blur border border-slate-200 rounded-full shadow-sm px-3 py-1.5 max-w-56 flex items-center gap-2 cursor-pointer"
+              className={`bg-white/90 backdrop-blur border border-slate-200 rounded-full shadow-sm px-3 py-1.5 max-w-56 flex items-center gap-2 cursor-pointer ${INTERACTIVE_BUTTON_CLASS}`}
             >
               <p className="text-xs font-medium text-slate-700 truncate">{tenant?.schoolName || 'School'}</p>
               <span className="w-4 h-4 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 flex items-center justify-center">
@@ -1587,7 +2259,7 @@ const CardEditor = () => {
                 setShowStudentModal(true);
               }}
               data-tooltip="Change student"
-              className="bg-white/90 backdrop-blur border border-slate-200 rounded-full shadow-sm px-3 py-1.5 max-w-56 flex items-center gap-2 cursor-pointer"
+              className={`bg-white/90 backdrop-blur border border-slate-200 rounded-full shadow-sm px-3 py-1.5 max-w-56 flex items-center gap-2 cursor-pointer ${INTERACTIVE_BUTTON_CLASS}`}
             >
               <p className="text-xs font-medium text-slate-700 truncate">{studentName || 'No Student'}</p>
               <span className="w-4 h-4 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 flex items-center justify-center">
@@ -1614,12 +2286,16 @@ const CardEditor = () => {
             >
               <div
                 ref={cardRef}
-                className="relative border border-slate-200 rounded-xl overflow-hidden shadow-sm select-none"
+                className="relative overflow-hidden shadow-sm select-none"
                 style={{
                   width: `${canvasWidth}px`,
                   height: `${canvasHeight}px`,
                   transform: `scale(${zoom})`,
-                  transformOrigin: 'top left'
+                  transformOrigin: 'top left',
+                  borderRadius: `${canvasRadius}px`,
+                  borderStyle: canvasBorderWidth > 0 ? 'solid' : 'none',
+                  borderWidth: `${canvasBorderWidth}px`,
+                  borderColor: canvasBorderColor
                 }}
                 onClick={(event) => {
                   if (event.target.closest('[data-element-layer="true"]')) return;
@@ -1648,16 +2324,20 @@ const CardEditor = () => {
                         event.stopPropagation();
                         handleCanvasElementDoubleClick(element);
                       }}
-                      className={`absolute cursor-move ${selectedVisualElementIds.includes(element.id) ? 'ring-2 ring-blue-500 rounded-md' : ''}`}
+                      className={`absolute ${(!expandedGroupId && !element.groupId && element.locked) ? 'cursor-not-allowed' : 'cursor-move'}`}
                       style={{
                         top: `${meta.top}px`,
                         left: `${meta.left}px`,
                         width: `${meta.width}px`,
                         height: `${meta.height}px`,
-                        transform: `rotate(${(element.rotation || 0) + (groups[element.groupId]?.rotation || 0)}deg)`
+                        transform: `rotate(${(element.rotation || 0) + (groups[element.groupId]?.rotation || 0)}deg)`,
+                        zIndex: selectedVisualElementIds.includes(element.id) ? 20 : 10
                       }}
                     >
                       {renderOverlayElement(element, meta)}
+                      {selectedVisualElementIds.includes(element.id) && (
+                        <div className="absolute -inset-1 pointer-events-none border-2 border-blue-500 rounded-md" />
+                      )}
                     </div>
                   );
                 })}
@@ -1674,7 +2354,7 @@ const CardEditor = () => {
                   return (
                     <div
                       key={`group-focus-${groupId}`}
-                      className="absolute pointer-events-none border-2 border-blue-500 rounded-md"
+                      className="absolute pointer-events-none border-2 border-blue-500 rounded-md z-30"
                       style={{
                         left: `${minX - 2}px`,
                         top: `${minY - 2}px`,
@@ -1687,7 +2367,7 @@ const CardEditor = () => {
 
                 {multiSelectionBounds && (
                   <div
-                    className="absolute pointer-events-none border-2 border-dashed border-indigo-500 rounded-md"
+                    className="absolute pointer-events-none border-2 border-dashed border-indigo-500 rounded-md z-30"
                     style={{
                       left: `${multiSelectionBounds.left - 4}px`,
                       top: `${multiSelectionBounds.top - 4}px`,
@@ -1705,7 +2385,8 @@ const CardEditor = () => {
               <button
                 type="button"
                 onClick={() => setZoomClamped(zoom - 0.1)}
-                className="w-6 h-6 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                data-tooltip="Zoom out"
+                className={`w-6 h-6 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 ${INTERACTIVE_BUTTON_CLASS}`}
               >
                 -
               </button>
@@ -1715,19 +2396,28 @@ const CardEditor = () => {
               <button
                 type="button"
                 onClick={() => setZoomClamped(zoom + 0.1)}
-                className="w-6 h-6 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                data-tooltip="Zoom in"
+                className={`w-6 h-6 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 ${INTERACTIVE_BUTTON_CLASS}`}
               >
                 +
               </button>
               <button
                 type="button"
                 onClick={() => setZoom(1)}
-                className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                data-tooltip="Reset zoom"
+                className={`text-xs px-2 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 ${INTERACTIVE_BUTTON_CLASS}`}
               >
                 Reset
               </button>
             </div>
             <p className="text-[10px] text-slate-500 mt-1">Tip: Ctrl/Cmd + wheel to zoom</p>
+          </div>
+
+          <div
+            className="absolute bottom-3 right-3 z-10 bg-white/90 border border-slate-200 rounded-lg shadow-sm px-2 py-1.5"
+            data-tooltip="Canvas size"
+          >
+            <p className="text-xs font-medium text-slate-700">Size: {canvasWidth} x {canvasHeight}</p>
           </div>
         </Card>
 
@@ -1741,7 +2431,8 @@ const CardEditor = () => {
               <button
                 type="button"
                 onClick={groupSelectedLayers}
-                className="w-full px-3 py-2 rounded-lg text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 transition"
+                data-tooltip="Group selected layers (Ctrl/Cmd + G)"
+                className={`w-full px-3 py-2 rounded-lg text-sm bg-slate-100 text-slate-700 hover:bg-slate-200 transition ${INTERACTIVE_BUTTON_CLASS}`}
               >
                 Group Selected ({selectedIds.length})
               </button>
@@ -1756,7 +2447,7 @@ const CardEditor = () => {
                       type="button"
                       onClick={() => alignSelection(action.key, 'artboard')}
                       data-tooltip={action.label}
-                      className="h-8 rounded border border-slate-300 hover:bg-slate-100 text-slate-700 flex items-center justify-center"
+                      className={`h-8 rounded border border-slate-300 hover:bg-slate-100 text-slate-700 flex items-center justify-center ${INTERACTIVE_BUTTON_CLASS}`}
                     >
                       {renderAlignmentIcon(action.icon)}
                     </button>
@@ -1774,12 +2465,103 @@ const CardEditor = () => {
                       type="button"
                       onClick={() => alignSelection(action.key, 'selection')}
                       data-tooltip={action.label}
-                      className="h-8 rounded border border-slate-300 hover:bg-slate-100 text-slate-700 flex items-center justify-center"
+                      className={`h-8 rounded border border-slate-300 hover:bg-slate-100 text-slate-700 flex items-center justify-center ${INTERACTIVE_BUTTON_CLASS}`}
                     >
                       {renderAlignmentIcon(action.icon)}
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+            {selectedVisualElementIds.length > 1 && (
+              <div className="space-y-2 p-3 rounded border border-slate-200 bg-white">
+                <p className="text-[11px] font-medium text-slate-500">Common Properties ({selectedVisualElementIds.length})</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => updateSelectedBulk({ showFill: commonShowFill === true ? false : true })}
+                    data-tooltip="Toggle fill on all selected layers"
+                    className={`px-2 py-1.5 rounded-md text-xs border ${commonShowFill ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'} ${INTERACTIVE_BUTTON_CLASS}`}
+                  >
+                    Fill
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateSelectedBulk({ showBorder: commonShowBorder === true ? false : true })}
+                    data-tooltip="Toggle border on all selected layers"
+                    className={`px-2 py-1.5 rounded-md text-xs border ${commonShowBorder ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'} ${INTERACTIVE_BUTTON_CLASS}`}
+                  >
+                    Border
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-slate-500">Border Width</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={commonBorderWidth ?? ''}
+                      onChange={(e) => updateSelectedBulk({ borderWidth: Math.max(0, asNumber(e.target.value, commonBorderWidth || 1)) })}
+                      className="w-full mt-1 px-2 py-1.5 text-sm border border-slate-300 rounded-md"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500">Border Radius</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={commonBorderRadius ?? ''}
+                      onChange={(e) => updateSelectedBulk({ borderRadius: Math.max(0, asNumber(e.target.value, commonBorderRadius || 0)) })}
+                      className="w-full mt-1 px-2 py-1.5 text-sm border border-slate-300 rounded-md"
+                    />
+                  </div>
+                </div>
+                {allSelectedAreText && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-slate-500">Text Color</label>
+                        <div className="relative mt-1">
+                          <input
+                            type="text"
+                            value={commonTextColor ?? ''}
+                            onChange={(e) => updateSelectedBulk({ color: e.target.value }, (item) => item.kind === 'text')}
+                            className="w-full pr-10 px-2 py-1.5 text-sm border border-slate-300 rounded-md uppercase"
+                          />
+                          <label className="absolute top-1/2 right-2 -translate-y-1/2 w-6 h-6 rounded border border-slate-300 cursor-pointer flex items-center justify-center bg-white">
+                            <Pipette className="w-3.5 h-3.5 text-slate-600" />
+                            <input
+                              type="color"
+                              value={commonTextColor || '#0f172a'}
+                              onChange={(e) => updateSelectedBulk({ color: e.target.value }, (item) => item.kind === 'text')}
+                              className="sr-only"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-500">Font Size</label>
+                        <input
+                          type="number"
+                          min="8"
+                          max="72"
+                          value={commonFontSize ?? ''}
+                          onChange={(e) => updateSelectedBulk({ fontSize: Math.max(8, asNumber(e.target.value, commonFontSize || 14)) }, (item) => item.kind === 'text')}
+                          className="w-full mt-1 px-2 py-1.5 text-sm border border-slate-300 rounded-md"
+                        />
+                      </div>
+                    </div>
+                    <Select
+                      label="Font Family"
+                      value={commonFontFamily || ''}
+                      onChange={(e) => updateSelectedBulk({ fontFamily: e.target.value }, (item) => item.kind === 'text')}
+                      options={FONT_OPTIONS}
+                      placeholder={commonFontFamily ? 'Select font' : 'Mixed font'}
+                      searchable={false}
+                      tooltipDirection="left"
+                    />
+                  </>
+                )}
               </div>
             )}
             {selectedGroup && selectedGroupIds.length === 1 && selectedIds.length === 0 && (
@@ -1826,7 +2608,75 @@ const CardEditor = () => {
               </div>
             )}
 
-            {selectedIds.length === 0 && selectedGroupIds.length === 0 && <p className="text-sm text-slate-500">Select an element on canvas.</p>}
+            {selectedIds.length === 0 && selectedGroupIds.length === 0 && (
+              <div className="space-y-3 p-3 rounded border border-slate-200 bg-white">
+                <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-400">Canvas</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-slate-500">Width</label>
+                    <p className="w-full mt-1 px-2 py-1.5 text-sm border border-slate-200 rounded-md bg-slate-50 text-slate-700">{canvasWidth}px</p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500">Height</label>
+                    <p className="w-full mt-1 px-2 py-1.5 text-sm border border-slate-200 rounded-md bg-slate-50 text-slate-700">{canvasHeight}px</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500">Border Radius</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <input
+                      type="range"
+                      min="0"
+                      max="80"
+                      value={canvasRadius}
+                      onChange={(e) => setCanvasRadius(asNumber(e.target.value, canvasRadius))}
+                      className="flex-1"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="999"
+                      value={canvasRadius}
+                      onChange={(e) => setCanvasRadius(Math.max(0, asNumber(e.target.value, canvasRadius)))}
+                      className="w-16 px-2 py-1.5 text-sm border border-slate-300 rounded-md"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-slate-500">Border Width</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="24"
+                      value={canvasBorderWidth}
+                      onChange={(e) => setCanvasBorderWidth(Math.max(0, asNumber(e.target.value, canvasBorderWidth)))}
+                      className="w-full mt-1 px-2 py-1.5 text-sm border border-slate-300 rounded-md"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500">Border Color</label>
+                    <div className="relative mt-1">
+                      <input
+                        type="text"
+                        value={canvasBorderColor}
+                        onChange={(e) => setCanvasBorderColor(e.target.value)}
+                        className="w-full pr-10 px-2 py-1.5 text-sm border border-slate-300 rounded-md uppercase"
+                      />
+                      <label className="absolute top-1/2 right-2 -translate-y-1/2 w-6 h-6 rounded border border-slate-300 cursor-pointer flex items-center justify-center bg-white">
+                        <Pipette className="w-3.5 h-3.5 text-slate-600" />
+                        <input
+                          type="color"
+                          value={canvasBorderColor}
+                          onChange={(e) => setCanvasBorderColor(e.target.value)}
+                          className="sr-only"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             {selectedElement && selectedIds.length === 1 && (
               <>
                 <div>
@@ -1901,11 +2751,11 @@ const CardEditor = () => {
                     {selectedElement.kind === 'text' && (
                       <button
                         type="button"
-                        onClick={() => updateSelected({ textLayout: selectedElement.textLayout === 'dynamic' ? 'fixed' : 'dynamic' })}
+                        onClick={() => updateSelected({ textLayout: isPaddingLayout(selectedElement.textLayout) ? 'fixed' : 'dynamic' })}
                         className="w-5 h-5 rounded-md border border-slate-300 hover:bg-slate-50 flex items-center justify-center"
-                        data-tooltip={selectedElement.textLayout === 'dynamic' ? 'Padding layout' : 'Fixed layout'}
+                        data-tooltip={isPaddingLayout(selectedElement.textLayout) ? 'Padding layout' : 'Fixed layout'}
                       >
-                        {selectedElement.textLayout === 'dynamic' ? (
+                        {isPaddingLayout(selectedElement.textLayout) ? (
                           <GripHorizontal className="w-3 h-3 text-slate-700" />
                         ) : (
                           <Square className="w-3 h-3 text-slate-700" />
@@ -1922,7 +2772,7 @@ const CardEditor = () => {
                         value={selectedElement.width}
                         onChange={(e) => updateSelected({ width: Math.max(20, asNumber(e.target.value, selectedElement.width)) })}
                         className="w-full pl-6 pr-2 py-1.5 text-sm border border-slate-300 rounded-md"
-                        disabled={selectedElement.kind === 'text' && selectedElement.textLayout === 'dynamic'}
+                        disabled={selectedElement.kind === 'text' && isPaddingLayout(selectedElement.textLayout)}
                       />
                     </div>
                     <div className="relative">
@@ -1933,13 +2783,13 @@ const CardEditor = () => {
                         value={selectedElement.height}
                         onChange={(e) => updateSelected({ height: Math.max(20, asNumber(e.target.value, selectedElement.height)) })}
                         className="w-full pl-6 pr-2 py-1.5 text-sm border border-slate-300 rounded-md"
-                        disabled={selectedElement.kind === 'text' && selectedElement.textLayout === 'dynamic'}
+                        disabled={selectedElement.kind === 'text' && isPaddingLayout(selectedElement.textLayout)}
                       />
                     </div>
                   </div>
                 </div>
 
-                {selectedElement.textLayout === 'dynamic' && (
+                {isPaddingLayout(selectedElement.textLayout) && (
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs text-slate-500">Padding X</label>
@@ -2005,6 +2855,14 @@ const CardEditor = () => {
                         />
                       </div>
                     </div>
+                    <Select
+                      label="Font Family"
+                      value={selectedElement.fontFamily || 'Inter, sans-serif'}
+                      onChange={(e) => updateSelected({ fontFamily: e.target.value })}
+                      options={FONT_OPTIONS}
+                      searchable={false}
+                      tooltipDirection="left"
+                    />
                   </>
                 )}
 
@@ -2221,6 +3079,199 @@ const CardEditor = () => {
             )}
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={showExportModal}
+        onClose={() => {
+          setShowExportModal(false);
+          setActiveExportClassId(null);
+          setExportClassSearch('');
+        }}
+        title="Export Cards"
+        size="xl"
+      >
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-slate-600 inline-flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Total selected students: <span className="font-semibold text-slate-800">{exportSelectedStudentIds.length}</span>
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={selectAllExportStudents}>Select All</Button>
+              <Button variant="outline" size="sm" onClick={clearAllExportStudents}>Deselect All</Button>
+            </div>
+          </div>
+
+          {exportLoading ? (
+            <p className="text-sm text-slate-500 py-10 text-center">Loading classes and students...</p>
+          ) : !activeExportClassId ? (
+            <>
+              <Input
+                label="Search Classes"
+                value={exportClassSearch}
+                onChange={(e) => setExportClassSearch(e.target.value)}
+                placeholder="Search class by name or section"
+              />
+              <div className="max-h-[58vh] overflow-auto grid grid-cols-1 md:grid-cols-2 gap-3">
+                {filteredExportClasses.map((cls) => {
+                  const classStudents = studentsByClass[cls._id] || [];
+                  const classSelectedCount = classStudents.filter((student) => exportSelectedIdSet.has(student._id)).length;
+                  return (
+                    <button
+                      key={cls._id}
+                      type="button"
+                      onClick={() => setActiveExportClassId(cls._id)}
+                      className="text-left p-3 border border-slate-200 rounded-lg bg-white hover:bg-slate-50"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800 inline-flex items-center gap-1.5">
+                            <Building2 className="w-4 h-4 text-slate-500" />
+                            {cls.name} {cls.section ? `- ${cls.section}` : ''}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Selected: {classSelectedCount} / {classStudents.length}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              selectAllInClass(cls._id);
+                            }}
+                          >
+                            Select
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              deselectAllInClass(cls._id);
+                            }}
+                          >
+                            Clear
+                          </Button>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+                {filteredExportClasses.length === 0 && (
+                  <p className="text-sm text-slate-500 p-4">No classes found.</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveExportClassId(null)}
+                  className="text-sm text-slate-700 inline-flex items-center gap-1 hover:text-slate-900"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Back to classes
+                </button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => selectAllInClass(activeExportClassId)}>Select All in Class</Button>
+                  <Button variant="outline" size="sm" onClick={() => deselectAllInClass(activeExportClassId)}>Deselect All in Class</Button>
+                </div>
+              </div>
+
+              <div className="max-h-[56vh] overflow-auto grid grid-cols-1 md:grid-cols-2 gap-3">
+                {activeClassStudents.map((student) => {
+                  const selected = exportSelectedIdSet.has(student._id);
+                  return (
+                    <div
+                      key={student._id}
+                      className={`p-3 rounded-lg border ${selected ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">{student.firstName} {student.lastName}</p>
+                          <p className="text-xs text-slate-600 mt-1">Father: {student.guardian || '-'}</p>
+                          <p className="text-xs text-slate-600">Roll No: {student.rollNo || '-'}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <Button
+                            size="sm"
+                            variant={selected ? 'primary' : 'outline'}
+                            onClick={() => toggleExportStudentSelection(student._id)}
+                          >
+                            {selected ? 'Selected' : 'Select'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setSelectedStudentDetails(student);
+                              setShowStudentDetailsModal(true);
+                            }}
+                            className="inline-flex items-center gap-1"
+                          >
+                            <Eye className="w-4 h-4" />
+                            Details
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {activeClassStudents.length === 0 && (
+                  <p className="text-sm text-slate-500 p-4">No students in this class.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+            <Button variant="outline" onClick={() => setShowExportModal(false)}>Close</Button>
+            <Button onClick={exportSelectedCardsAsSvg} disabled={exportSelectedStudentIds.length === 0 || exporting}>
+              <Download className="w-4 h-4" />
+              {exporting ? 'Generating...' : 'Generate SVG'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showStudentDetailsModal}
+        onClose={() => setShowStudentDetailsModal(false)}
+        title="Student Details"
+        size="md"
+      >
+        {selectedStudentDetails ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-16 h-16 rounded-lg border border-slate-200 overflow-hidden bg-slate-100 flex items-center justify-center">
+                {selectedStudentDetails.studentPhoto ? (
+                  <img src={selectedStudentDetails.studentPhoto} alt="Student" className="w-full h-full object-cover" />
+                ) : (
+                  <Users className="w-6 h-6 text-slate-400" />
+                )}
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-800">
+                  {selectedStudentDetails.firstName} {selectedStudentDetails.lastName}
+                </p>
+                <p className="text-xs text-slate-500">Roll No: {selectedStudentDetails.rollNo || '-'}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <p className="text-slate-500">Father: <span className="text-slate-800">{selectedStudentDetails.guardian || '-'}</span></p>
+              <p className="text-slate-500">Class: <span className="text-slate-800">{getClassLabelFromStudent(selectedStudentDetails)}</span></p>
+              <p className="text-slate-500">Gender: <span className="text-slate-800">{selectedStudentDetails.gender || '-'}</span></p>
+              <p className="text-slate-500">Contact: <span className="text-slate-800">{selectedStudentDetails.contact || '-'}</span></p>
+              <p className="text-slate-500 col-span-2">Address: <span className="text-slate-800">{selectedStudentDetails.address || '-'}</span></p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">No student selected.</p>
+        )}
       </Modal>
 
       <div className="absolute bottom-14 right-3 z-20">

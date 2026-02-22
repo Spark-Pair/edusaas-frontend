@@ -2,7 +2,7 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './context/AuthContext';
-import { LoadingSpinner } from './components/common';
+import { LoadingSpinner, TooltipLayer } from './components/common';
 
 // Pages
 import LoginPage from './pages/LoginPage';
@@ -143,6 +143,7 @@ const App = () => {
           </div>
         } />
       </Routes>
+      <TooltipLayer />
     </>
   );
 };

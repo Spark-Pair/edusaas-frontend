@@ -11,6 +11,7 @@ const Button = ({
   className = '',
   icon = null,
   title,
+  tooltipDirection = 'top',
   ...rest
 }) => {
   const baseClasses = 'font-medium rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed';
@@ -36,6 +37,7 @@ const Button = ({
       onClick={onClick}
       disabled={disabled || loading}
       data-tooltip={title || undefined}
+      data-tooltip-direction={title ? tooltipDirection : undefined}
       className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
       {...rest}
     >

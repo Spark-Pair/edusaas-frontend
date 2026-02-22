@@ -12,7 +12,8 @@ const Select = ({
   error = '',
   className = '',
   searchable = true,
-  title
+  title,
+  tooltipDirection = 'top'
 }) => {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -82,6 +83,7 @@ const Select = ({
       <button
         type="button"
         data-tooltip={title || selected?.label || placeholder}
+        data-tooltip-direction={tooltipDirection}
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
         className={`w-full px-3 py-2.5 border rounded-lg text-sm transition-colors text-left flex items-center justify-between gap-2 ${
@@ -123,6 +125,7 @@ const Select = ({
                     key={option.value}
                     type="button"
                     data-tooltip={option.label}
+                    data-tooltip-direction="right"
                     onClick={() => emitChange(option.value)}
                     className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between ${
                       active ? 'bg-slate-100 text-slate-900 font-medium' : 'text-slate-700 hover:bg-slate-50'
