@@ -11,10 +11,16 @@ const Tenants = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTenant, setEditingTenant] = useState(null);
+  const [logoPreviewTenant, setLogoPreviewTenant] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmDialogSelection, setConfirmDialogSelection] = useState('cancel');
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState(null);
   const addSchoolLogoInputRef = useRef(null);
   const editSchoolLogoInputRef = useRef(null);
+  const addSchoolNameInputRef = useRef(null);
+  const confirmCancelBtnRef = useRef(null);
+  const confirmProceedBtnRef = useRef(null);
   const [formData, setFormData] = useState({
     schoolName: '',
     schoolLogo: '',
@@ -26,6 +32,40 @@ const Tenants = () => {
   useEffect(() => {
     fetchTenants();
   }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key.toLowerCase() !== 'n' || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+      const tag = event.target?.tagName?.toLowerCase();
+      const isTypingContext = tag === 'input' || tag === 'textarea' || tag === 'select' || event.target?.isContentEditable;
+      if (isTypingContext) return;
+      event.preventDefault();
+      setShowAddModal(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (!confirmAction) return;
+    setConfirmDialogSelection('cancel');
+    const timer = setTimeout(() => {
+      confirmCancelBtnRef.current?.focus();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [confirmAction]);
+
+  useEffect(() => {
+    if (!showAddModal) return;
+    const timer = setTimeout(() => {
+      addSchoolNameInputRef.current?.focus();
+      addSchoolNameInputRef.current?.select?.();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [showAddModal]);
+
+  const sanitizeUsername = (value = '') => value.toLowerCase().replace(/\s+/g, '');
+  const isValidUsername = (value = '') => /^[a-z0-9._-]+$/.test(value);
 
   const readImageAsDataUrl = (file) =>
     new Promise((resolve, reject) => {
@@ -58,7 +98,7 @@ const Tenants = () => {
       const { data } = await adminAPI.getTenants();
       setTenants(data.data);
     } catch (error) {
-      toast.error('Failed to fetch tenants');
+      toast.error('Failed to fetch schools');
     } finally {
       setLoading(false);
     }
@@ -66,12 +106,18 @@ const Tenants = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const normalizedUsername = sanitizeUsername(formData.username);
+    if (!isValidUsername(normalizedUsername)) {
+      toast.error('Username can only use lowercase letters, numbers, dot, underscore, and hyphen.');
+      return;
+    }
     setSaving(true);
 
     try {
+      const payload = { ...formData, username: normalizedUsername };
       if (editingTenant) {
-        const { data } = await adminAPI.updateTenant(editingTenant._id, formData);
-        toast.success('Tenant updated!');
+        const { data } = await adminAPI.updateTenant(editingTenant._id, payload);
+        toast.success('School updated!');
 
         // Update local state with the updated tenant
         setTenants(prev => prev.map(tenant =>
@@ -82,8 +128,8 @@ const Tenants = () => {
 
         setShowEditModal(false);
       } else {
-        const { data } = await adminAPI.createTenant(formData);
-        toast.success('Tenant created!');
+        const { data } = await adminAPI.createTenant(payload);
+        toast.success('School created!');
 
         // Add new tenant to local state
         setTenants(prev => [data.data, ...prev]);
@@ -119,6 +165,30 @@ const Tenants = () => {
     }
   };
 
+  const handleDeleteSchool = async (id) => {
+    setTogglingId(id);
+    try {
+      await adminAPI.deleteTenant(id);
+      setTenants((prev) => prev.filter((tenant) => tenant._id !== id));
+      toast.success('School removed!');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to remove school');
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const executeConfirmAction = async () => {
+    const pending = confirmAction;
+    setConfirmAction(null);
+    if (!pending?.tenant?._id) return;
+    if (pending.type === 'remove') {
+      await handleDeleteSchool(pending.tenant._id);
+      return;
+    }
+    await handleToggleStatus(pending.tenant._id);
+  };
+
   const openEditModal = (tenant) => {
     setEditingTenant(tenant);
     setFormData({
@@ -135,6 +205,19 @@ const Tenants = () => {
     setFormData({ schoolName: '', schoolLogo: '', username: '', password: '', validityDate: '' });
     setEditingTenant(null);
   };
+  const isCreateDisabled =
+    saving ||
+    !formData.schoolName.trim() ||
+    !formData.username.trim() ||
+    !formData.password.trim() ||
+    !formData.validityDate ||
+    !isValidUsername(sanitizeUsername(formData.username));
+  const isEditDisabled =
+    saving ||
+    !formData.schoolName.trim() ||
+    !formData.username.trim() ||
+    !formData.validityDate ||
+    !isValidUsername(sanitizeUsername(formData.username));
 
   const getValidityVariant = (date) => {
     const validityDate = new Date(date);
@@ -146,21 +229,21 @@ const Tenants = () => {
   };
 
   if (loading) {
-    return <LoadingSpinner size="lg" text="Loading tenants..." />;
+    return <LoadingSpinner size="lg" text="Loading schools..." />;
   }
 
   return (
     <div className="fade-in">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-semibold text-slate-800">Tenants</h1>
-          <p className="text-sm text-slate-500 mt-1">Manage school accounts</p>
+          <h1 className="text-xl font-semibold text-slate-800">Schools</h1>
+          <p className="text-sm text-slate-500 mt-1">Manage schools and access</p>
         </div>
-        <Button onClick={() => setShowAddModal(true)} title="Create a new tenant">
+        <Button onClick={() => setShowAddModal(true)} title="Add school (Shift + N)" data-tooltip="Add school (Shift + N)">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Tenant
+          Add School
         </Button>
       </div>
 
@@ -179,7 +262,15 @@ const Tenants = () => {
             </thead>
             <tbody>
               {tenants.map((tenant, index) => (
-                <tr key={tenant._id} className="fade-in" style={{ animationDelay: `${index * 30}ms` }}>
+                <tr
+                  key={tenant._id}
+                  className="fade-in hover:bg-slate-50 cursor-pointer"
+                  style={{ animationDelay: `${index * 30}ms` }}
+                  onClick={() => {
+                    if (tenant.schoolLogo) setLogoPreviewTenant(tenant);
+                  }}
+                  data-tooltip={tenant.schoolLogo ? 'Click row to preview school logo' : 'No school logo'}
+                >
                   <td>
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center">
@@ -218,32 +309,63 @@ const Tenants = () => {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => navigate(`/admin/cards?tenantId=${tenant._id}`)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          navigate(`/admin/cards?tenantId=${tenant._id}`);
+                        }}
                         disabled={togglingId === tenant._id}
                         title={`Open cards for ${tenant.schoolName}`}
+                        data-tooltip="Cards"
                       >
                         Cards
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => openEditModal(tenant)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openEditModal(tenant);
+                        }}
                         disabled={togglingId === tenant._id}
                         title={`Edit ${tenant.schoolName}`}
+                        data-tooltip="Edit school"
                       >
                         Edit
                       </Button>
                       <Button
                         size="sm"
                         variant={tenant.status === 'active' ? 'danger' : 'success'}
-                        onClick={() => handleToggleStatus(tenant._id)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setConfirmAction({
+                            type: 'status',
+                            tenant
+                          });
+                        }}
                         disabled={togglingId === tenant._id}
                         title={tenant.status === 'active' ? `Deactivate ${tenant.schoolName}` : `Activate ${tenant.schoolName}`}
+                        data-tooltip={tenant.status === 'active' ? 'Deactivate school' : 'Activate school'}
                       >
                         {togglingId === tenant._id
                           ? 'Processing...'
                           : tenant.status === 'active' ? 'Deactivate' : 'Activate'
                         }
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setConfirmAction({
+                            type: 'remove',
+                            tenant
+                          });
+                        }}
+                        disabled={togglingId === tenant._id}
+                        title={`Remove ${tenant.schoolName}`}
+                        data-tooltip="Remove school"
+                      >
+                        Remove
                       </Button>
                     </div>
                   </td>
@@ -252,7 +374,7 @@ const Tenants = () => {
             </tbody>
           </table>
           {tenants.length === 0 && (
-            <p className="text-center py-8 text-slate-500">No tenants found</p>
+            <p className="text-center py-8 text-slate-500">No schools found</p>
           )}
         </div>
       </Card>
@@ -261,7 +383,7 @@ const Tenants = () => {
       <Modal
         isOpen={showAddModal}
         onClose={() => { setShowAddModal(false); resetForm(); }}
-        title="New Tenant Workspace"
+        title="Add School"
         size="xl" // Using the wider grid layout
       >
         <form onSubmit={handleSubmit} className="flex h-[520px] -m-5">
@@ -313,6 +435,7 @@ const Tenants = () => {
               {/* Primary Name Field */}
               <div className="space-y-1 text-center">
                 <input
+                  ref={addSchoolNameInputRef}
                   className="w-full bg-transparent text-2xl font-bold text-slate-800 text-center placeholder:text-slate-300 focus:outline-none"
                   value={formData.schoolName}
                   onChange={(e) => setFormData({ ...formData, schoolName: e.target.value })}
@@ -332,12 +455,15 @@ const Tenants = () => {
 
               <div className="space-y-4">
                 <Input
-                  label="Administrative Username"
+                  label="Username"
                   value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  placeholder="admin_username"
+                  onChange={(e) => setFormData({ ...formData, username: sanitizeUsername(e.target.value) })}
+                  placeholder="school_username"
                   required
                 />
+                {formData.username && !isValidUsername(sanitizeUsername(formData.username)) && (
+                  <p className="text-xs text-red-500">Lowercase only. No spaces. Allowed: a-z 0-9 . _ -</p>
+                )}
 
                 <Input
                   label="Initial Password"
@@ -366,7 +492,7 @@ const Tenants = () => {
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" /></svg>
                   </div>
                   <p className="text-[11px] text-blue-700 leading-relaxed font-medium">
-                    Creating this tenant will initialize a dedicated database schema and administrative portal.
+                    Creating this school will provision login access and school workspace.
                   </p>
                 </div>
               </div>
@@ -383,10 +509,11 @@ const Tenants = () => {
               </Button>
               <Button
                 type="submit"
-                disabled={saving}
+                disabled={isCreateDisabled}
                 className="flex-[2] bg-slate-900 hover:bg-black text-white font-bold text-xs uppercase tracking-widest py-3 shadow-xl"
+                data-tooltip={isCreateDisabled ? 'Fill all required fields with valid username' : 'Create school'}
               >
-                {saving ? 'Processing...' : 'Provision Tenant'}
+                {saving ? 'Processing...' : 'Create School'}
               </Button>
             </div>
           </div>
@@ -397,7 +524,7 @@ const Tenants = () => {
       <Modal
         isOpen={showEditModal}
         onClose={() => { setShowEditModal(false); resetForm(); }}
-        title="Edit Tenant Workspace"
+        title="Edit School"
         size="xl"
       >
         <form onSubmit={handleSubmit} className="flex h-[520px] -m-5">
@@ -478,12 +605,15 @@ const Tenants = () => {
 
               <div className="space-y-4">
                 <Input
-                  label="Administrative Username"
+                  label="Username"
                   value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  placeholder="admin_username"
+                  onChange={(e) => setFormData({ ...formData, username: sanitizeUsername(e.target.value) })}
+                  placeholder="school_username"
                   required
                 />
+                {formData.username && !isValidUsername(sanitizeUsername(formData.username)) && (
+                  <p className="text-xs text-red-500">Lowercase only. No spaces. Allowed: a-z 0-9 . _ -</p>
+                )}
 
                 <Input
                   label="New Password"
@@ -513,7 +643,7 @@ const Tenants = () => {
                     </svg>
                   </div>
                   <p className="text-[11px] text-amber-700 leading-relaxed font-medium">
-                    Changes to credentials will take effect on the tenant's next login session.
+                    Changes to credentials will take effect on the school's next login session.
                   </p>
                 </div>
               </div>
@@ -531,8 +661,9 @@ const Tenants = () => {
               </Button>
               <Button
                 type="submit"
-                disabled={saving}
+                disabled={isEditDisabled}
                 className="flex-[2] bg-slate-900 hover:bg-black text-white font-bold text-xs uppercase tracking-widest py-3 shadow-xl"
+                data-tooltip={isEditDisabled ? 'Fill all required fields with valid username' : 'Save changes'}
               >
                 {saving ? 'Processing...' : 'Save Changes'}
               </Button>
@@ -540,6 +671,84 @@ const Tenants = () => {
           </div>
 
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(logoPreviewTenant)}
+        onClose={() => setLogoPreviewTenant(null)}
+        title={logoPreviewTenant?.schoolName || 'School Logo'}
+        size="xl"
+      >
+        <div className="min-h-[60vh] bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-center">
+          {logoPreviewTenant?.schoolLogo ? (
+            <img
+              src={logoPreviewTenant.schoolLogo}
+              alt={logoPreviewTenant.schoolName}
+              className="max-w-full max-h-[70vh] object-contain"
+            />
+          ) : (
+            <p className="text-sm text-slate-500">No logo available.</p>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(confirmAction)}
+        onClose={() => setConfirmAction(null)}
+        title={confirmAction?.type === 'remove' ? 'Remove School' : `${confirmAction?.tenant?.status === 'active' ? 'Deactivate' : 'Activate'} School`}
+        size="md"
+      >
+        <div
+          className="space-y-4"
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              setConfirmDialogSelection('cancel');
+              confirmCancelBtnRef.current?.focus();
+              return;
+            }
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+              event.preventDefault();
+              setConfirmDialogSelection('confirm');
+              confirmProceedBtnRef.current?.focus();
+              return;
+            }
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              if (confirmDialogSelection === 'cancel') {
+                setConfirmAction(null);
+                return;
+              }
+              executeConfirmAction();
+            }
+          }}
+        >
+          <p className="text-sm text-slate-600">
+            {confirmAction?.type === 'remove'
+              ? `Are you sure you want to remove ${confirmAction?.tenant?.schoolName}? This cannot be undone.`
+              : `Are you sure you want to ${confirmAction?.tenant?.status === 'active' ? 'deactivate' : 'activate'} ${confirmAction?.tenant?.schoolName}?`}
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button
+              ref={confirmCancelBtnRef}
+              variant="ghost"
+              onClick={() => setConfirmAction(null)}
+              className={confirmDialogSelection === 'cancel' ? 'ring-2 ring-slate-300' : ''}
+            >
+              Cancel
+            </Button>
+            <Button
+              ref={confirmProceedBtnRef}
+              variant={confirmAction?.type === 'remove' ? 'danger' : (confirmAction?.tenant?.status === 'active' ? 'danger' : 'success')}
+              onClick={executeConfirmAction}
+              className={confirmDialogSelection === 'confirm' ? 'ring-2 ring-slate-300' : ''}
+            >
+              {confirmAction?.type === 'remove'
+                ? 'Remove'
+                : (confirmAction?.tenant?.status === 'active' ? 'Deactivate' : 'Activate')}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

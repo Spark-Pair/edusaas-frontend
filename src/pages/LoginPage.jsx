@@ -12,6 +12,8 @@ const LoginPage = () => {
   const [error, setError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
+  const sanitizeUsername = (value = '') => value.toLowerCase().replace(/\s+/g, '');
+  const isValidUsername = (value = '') => /^[a-z0-9._-]+$/.test(value);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -27,9 +29,16 @@ const LoginPage = () => {
     
     setError('');
     
-    if (!username.trim() || !password.trim()) {
+    const normalizedUsername = sanitizeUsername(username);
+    if (!normalizedUsername || !password.trim()) {
       setError('Please enter username and password');
       toast.error('Please enter username and password');
+      return;
+    }
+    if (!isValidUsername(normalizedUsername)) {
+      const message = 'Username can only use lowercase letters, numbers, dot, underscore, and hyphen.';
+      setError(message);
+      toast.error(message);
       return;
     }
     
@@ -37,7 +46,7 @@ const LoginPage = () => {
 
     try {
       const { data } = await authAPI.login({ 
-        username: username.trim(), 
+        username: normalizedUsername, 
         password 
       });
       
@@ -81,7 +90,7 @@ const LoginPage = () => {
             label="Username"
             type="text"
             value={username}
-            onChange={(e) => { setUsername(e.target.value); setError(''); }}
+            onChange={(e) => { setUsername(sanitizeUsername(e.target.value)); setError(''); }}
             placeholder="Enter your username"
           />
           <Input

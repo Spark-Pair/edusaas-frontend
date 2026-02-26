@@ -1,16 +1,32 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Sidebar } from '../../components/common';
+import { Sidebar, Modal, Button } from '../../components/common';
 
 const TenantLayout = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [confirmSelection, setConfirmSelection] = useState('cancel');
+  const cancelBtnRef = useRef(null);
+  const proceedBtnRef = useRef(null);
 
   const handleLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const proceedLogout = () => {
+    setShowLogoutConfirm(false);
     logout();
     navigate('/login');
   };
+
+  useEffect(() => {
+    if (!showLogoutConfirm) return;
+    setConfirmSelection('cancel');
+    const timer = setTimeout(() => cancelBtnRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [showLogoutConfirm]);
 
   const sidebarItems = [
     {
@@ -42,17 +58,53 @@ const TenantLayout = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      <Sidebar
-        items={sidebarItems}
-        title={user?.schoolName || 'School'}
-        subtitle="School Admin"
-        onLogout={handleLogout}
-      />
-      <div className="ml-60 flex-1 p-6">
-        <Outlet />
+    <>
+      <div className="min-h-screen bg-slate-50 flex">
+        <Sidebar
+          items={sidebarItems}
+          title={user?.schoolName || 'School'}
+          subtitle="School Admin"
+          onLogout={handleLogout}
+        />
+        <div className="ml-60 flex-1 p-6">
+          <Outlet />
+        </div>
       </div>
-    </div>
+      <Modal isOpen={showLogoutConfirm} onClose={() => setShowLogoutConfirm(false)} title="Logout" size="md">
+        <div
+          className="space-y-4"
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              setConfirmSelection('cancel');
+              cancelBtnRef.current?.focus();
+              return;
+            }
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+              event.preventDefault();
+              setConfirmSelection('confirm');
+              proceedBtnRef.current?.focus();
+              return;
+            }
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              if (confirmSelection === 'cancel') setShowLogoutConfirm(false);
+              else proceedLogout();
+            }
+          }}
+        >
+          <p className="text-sm text-slate-600">Are you sure you want to logout?</p>
+          <div className="flex justify-end gap-2">
+            <Button ref={cancelBtnRef} variant="ghost" onClick={() => setShowLogoutConfirm(false)} className={confirmSelection === 'cancel' ? 'ring-2 ring-slate-300' : ''}>
+              Cancel
+            </Button>
+            <Button ref={proceedBtnRef} variant="danger" onClick={proceedLogout} className={confirmSelection === 'confirm' ? 'ring-2 ring-slate-300' : ''}>
+              Logout
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 };
 

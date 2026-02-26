@@ -1,6 +1,6 @@
 import React from 'react';
 
-const Button = ({ 
+const Button = React.forwardRef(({
   children, 
   onClick, 
   type = 'button', 
@@ -13,7 +13,7 @@ const Button = ({
   title,
   tooltipDirection = 'top',
   ...rest
-}) => {
+}, ref) => {
   const baseClasses = 'font-medium rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed';
   
   const variantClasses = {
@@ -33,6 +33,7 @@ const Button = ({
 
   return (
     <button
+      ref={ref}
       type={type}
       onClick={onClick}
       disabled={disabled || loading}
@@ -48,6 +49,8 @@ const Button = ({
       {children}
     </button>
   );
-};
+});
+
+Button.displayName = 'Button';
 
 export default Button;

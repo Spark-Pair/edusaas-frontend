@@ -62,7 +62,8 @@ export const adminAPI = {
   deleteCardTemplate: (id) => api.delete(`/admin/card-templates/${id}`),
   createTenant: (data) => api.post('/admin/tenants', data),
   updateTenant: (id, data) => api.put(`/admin/tenants/${id}`, data),
-  toggleStatus: (id) => api.patch(`/admin/tenants/${id}/status`)
+  toggleStatus: (id) => api.patch(`/admin/tenants/${id}/status`),
+  deleteTenant: (id) => api.delete(`/admin/tenants/${id}`)
 };
 
 // Tenant API
@@ -79,6 +80,7 @@ export const tenantAPI = {
   getStudent: (id) => api.get(`/tenant/students/${id}`),
   createStudent: (data) => api.post('/tenant/students', data),
   updateStudent: (id, data) => api.put(`/tenant/students/${id}`, data),
+  deleteStudent: (id) => api.delete(`/tenant/students/${id}`),
   
   // Attendance
   getClassAttendance: (classId, date) => api.get(`/tenant/attendance/${classId}/${date}`),

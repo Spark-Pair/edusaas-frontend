@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { tenantAPI } from '../../services/api';
 import { Card, Button, Modal, Input, Select, Badge, LoadingSpinner } from '../../components/common';
@@ -16,10 +16,42 @@ const Exams = () => {
   });
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [confirmSelection, setConfirmSelection] = useState('cancel');
+  const examNameInputRef = useRef(null);
+  const confirmCancelRef = useRef(null);
+  const confirmDeleteRef = useRef(null);
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key.toLowerCase() !== 'n' || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+      const tag = event.target?.tagName?.toLowerCase();
+      const isTypingContext = tag === 'input' || tag === 'textarea' || tag === 'select' || event.target?.isContentEditable;
+      if (isTypingContext) return;
+      event.preventDefault();
+      setShowExamModal(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (!showExamModal) return;
+    const timer = setTimeout(() => examNameInputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [showExamModal]);
+
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    setConfirmSelection('cancel');
+    const timer = setTimeout(() => confirmCancelRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [confirmDeleteId]);
 
   const fetchData = async () => {
     try {
@@ -63,13 +95,15 @@ const Exams = () => {
   };
 
   const handleDeleteExam = async (id) => {
-    if (!confirm('Delete this exam?')) return;
+    setDeletingId(id);
     try {
       await tenantAPI.deleteExam(id);
       toast.success('Exam deleted!');
       fetchData();
     } catch (error) {
       toast.error('Failed to delete exam');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -140,7 +174,7 @@ const Exams = () => {
           <h1 className="text-xl font-semibold text-slate-800">Examinations</h1>
           <p className="text-sm text-slate-500 mt-1">Manage exams and marks</p>
         </div>
-        <Button onClick={() => setShowExamModal(true)}>
+        <Button onClick={() => setShowExamModal(true)} title="Create exam (Shift + N)">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
@@ -157,7 +191,7 @@ const Exams = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <button onClick={() => handleDeleteExam(exam._id)} className="p-1 text-slate-400 hover:text-red-500 transition">
+              <button onClick={() => setConfirmDeleteId(exam._id)} className="p-1 text-slate-400 hover:text-red-500 transition" data-tooltip="Delete exam">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
@@ -184,7 +218,7 @@ const Exams = () => {
       {/* Create Exam Modal */}
       <Modal isOpen={showExamModal} onClose={() => setShowExamModal(false)} title="Create Exam" size="lg">
         <form onSubmit={handleCreateExam} className="space-y-4">
-          <Input label="Exam Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+          <Input ref={examNameInputRef} label="Exam Name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
           <div className="grid grid-cols-2 gap-4">
             <Select label="Class" value={formData.classId} onChange={(e) => setFormData({ ...formData, classId: e.target.value })} options={classOptions} required />
             <Input label="Date" type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} required />
@@ -221,6 +255,55 @@ const Exams = () => {
             <Button type="submit" className="flex-1" disabled={creating}>{creating ? 'Creating...' : 'Create'}</Button>
           </div>
         </form>
+      </Modal>
+      <Modal isOpen={Boolean(confirmDeleteId)} onClose={() => setConfirmDeleteId(null)} title="Delete Exam" size="md">
+        <div
+          className="space-y-4"
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              setConfirmSelection('cancel');
+              confirmCancelRef.current?.focus();
+              return;
+            }
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+              event.preventDefault();
+              setConfirmSelection('confirm');
+              confirmDeleteRef.current?.focus();
+              return;
+            }
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              if (confirmSelection === 'cancel') setConfirmDeleteId(null);
+              else if (confirmDeleteId) {
+                const targetId = confirmDeleteId;
+                setConfirmDeleteId(null);
+                handleDeleteExam(targetId);
+              }
+            }
+          }}
+        >
+          <p className="text-sm text-slate-600">Delete this exam?</p>
+          <div className="flex justify-end gap-2">
+            <Button ref={confirmCancelRef} variant="ghost" onClick={() => setConfirmDeleteId(null)} className={confirmSelection === 'cancel' ? 'ring-2 ring-slate-300' : ''}>
+              Cancel
+            </Button>
+            <Button
+              ref={confirmDeleteRef}
+              variant="danger"
+              loading={deletingId === confirmDeleteId}
+              onClick={() => {
+                if (!confirmDeleteId) return;
+                const targetId = confirmDeleteId;
+                setConfirmDeleteId(null);
+                handleDeleteExam(targetId);
+              }}
+              className={confirmSelection === 'confirm' ? 'ring-2 ring-slate-300' : ''}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Enter Marks Modal */}
