@@ -247,7 +247,7 @@ const Students = () => {
           <h1 className="text-xl font-semibold text-slate-800">Students</h1>
           <p className="text-sm text-slate-500 mt-1">Manage students by class</p>
         </div>
-        <Button onClick={openAddModal} title="Add student (Shift + N)">
+        <Button onClick={openAddModal} title="Add student (Shift + N)" className="h-[42px]">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
@@ -263,14 +263,14 @@ const Students = () => {
             onChange={(e) => setSelectedClass(e.target.value)}
             options={classOptions}
             placeholder="Choose a class to view students"
-            className="w-56"
+            className="w-56 [&_button]:h-[42px]"
           />
           <Input
             label="Search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by name, roll no..."
-            className="w-56"
+            className="w-56 [&>input]:h-[42px]"
             disabled={!selectedClass || studentsLoading}
           />
           <Select
@@ -283,7 +283,7 @@ const Students = () => {
               { value: 'left', label: 'Left' }
             ]}
             placeholder="All Status"
-            className="w-40"
+            className="w-40 [&_button]:h-[42px]"
             disabled={!selectedClass || studentsLoading}
           />
           {selectedClass && (

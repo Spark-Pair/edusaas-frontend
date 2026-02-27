@@ -123,16 +123,16 @@ const Attendance = () => {
             onChange={(e) => setSelectedClass(e.target.value)}
             options={classOptions}
             placeholder="Choose a class"
-            className="w-56"
+            className="w-56 [&_button]:h-[42px]"
           />
           <Input
             label="Date"
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="w-44"
+            className="w-44 [&>input]:h-[42px]"
           />
-          <Button onClick={handleSave} disabled={!selectedClass || saving}>
+          <Button onClick={handleSave} disabled={!selectedClass || saving} className="h-[42px]">
             {saving ? 'Saving...' : existingAttendance ? 'Update Attendance' : 'Save Attendance'}
           </Button>
         </div>
