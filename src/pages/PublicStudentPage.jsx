@@ -9,6 +9,13 @@ const PublicStudentPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('info');
+  const attendanceStatusMeta = {
+    present: { label: 'Present', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    absent: { label: 'Absent', className: 'bg-red-50 text-red-700 border-red-200' },
+    leave: { label: 'Leave', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+    day_off: { label: 'Day Off', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+    not_marked: { label: 'Not Marked', className: 'bg-slate-100 text-slate-700 border-slate-200' }
+  };
 
   useEffect(() => {
     const fetchStudent = async () => {
@@ -102,10 +109,10 @@ const PublicStudentPage = () => {
             </button>
           </div>
 
-          <div className="p-5">
+          <div className="py-5">
             {/* Basic Info Tab */}
             {activeTab === 'info' && (
-              <div className="space-y-4 fade-in">
+              <div className="space-y-4 fade-in mx-5">
                 <div className="flex justify-between items-center py-2 border-b border-slate-100">
                   <span className="text-sm text-slate-500">Class</span>
                   <span className="text-sm font-medium text-slate-800">
@@ -133,8 +140,8 @@ const PublicStudentPage = () => {
 
             {/* Attendance Tab */}
             {activeTab === 'attendance' && (
-              <div className="fade-in">
-                {student.attendance && student.attendance.totalDays > 0 ? (
+              <div className="fade-in mx-5">
+                {student.attendance ? (
                   <>
                     {/* Attendance Summary Card */}
                     <div className="bg-slate-50 rounded-lg p-4 mb-4 border border-slate-200">
@@ -177,15 +184,32 @@ const PublicStudentPage = () => {
                     </div>
 
                     <p className="text-xs text-slate-400 text-center">
-                      Total {student.attendance.totalDays} school days recorded
+                      Last 30 days: {student.attendance.totalDays} school days recorded
                     </p>
+
+                    {Array.isArray(student.attendance.daily) && student.attendance.daily.length > 0 && (
+                      <div className="mt-4 bg-white rounded-lg border border-slate-200 max-h-64 overflow-y-auto">
+                        {student.attendance.daily.map((item) => {
+                          const statusMeta = attendanceStatusMeta[item.status] || attendanceStatusMeta.not_marked;
+                          const formatted = new Date(item.date).toLocaleDateString();
+                          return (
+                            <div key={item.date} className="flex items-center justify-between px-3 py-2 border-b border-slate-100 last:border-b-0">
+                              <span className="text-sm text-slate-700">{formatted}</span>
+                              <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded border ${statusMeta.className}`}>
+                                {statusMeta.label}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="text-center py-8">
                     <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                     </svg>
-                    <p className="text-slate-500 text-sm">No attendance records yet</p>
+                    <p className="text-slate-500 text-sm">No attendance data</p>
                   </div>
                 )}
               </div>
@@ -193,10 +217,11 @@ const PublicStudentPage = () => {
 
             {/* Exams Tab */}
             {activeTab === 'exams' && (
-              <div className="fade-in">
+              <div className="fade-in h-[50vh] overflow-y-auto ml-5 mr-3 pr-2">
                 {student.exams && student.exams.length > 0 ? (
                   <div className="space-y-4">
                     {student.exams.map((exam, index) => (
+                      <>
                       <div key={index} className="bg-slate-50 rounded-lg p-4 border border-slate-200">
                         <div className="flex justify-between items-start mb-3">
                           <div>
@@ -231,6 +256,41 @@ const PublicStudentPage = () => {
                           </span>
                         </div>
                       </div>
+                      <div key={index} className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <h4 className="font-semibold text-slate-800">{exam.examName}</h4>
+                            <p className="text-xs text-slate-500">{exam.date}</p>
+                          </div>
+                          <div className={`text-lg font-bold ${
+                            exam.percentage >= 75 ? 'text-emerald-600' : 
+                            exam.percentage >= 50 ? 'text-amber-600' : 'text-red-600'
+                          }`}>
+                            {exam.percentage}%
+                          </div>
+                        </div>
+                        
+                        {/* Subjects */}
+                        <div className="space-y-2 mb-3">
+                          {exam.subjects.map((subject, sIndex) => (
+                            <div key={sIndex} className="flex justify-between items-center text-sm">
+                              <span className="text-slate-600">{subject.name}</span>
+                              <span className="font-medium text-slate-800">
+                                {subject.obtained} / {subject.maxMarks}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* Total */}
+                        <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+                          <span className="font-medium text-slate-700">Total</span>
+                          <span className="font-bold text-slate-800">
+                            {exam.total} / {exam.maxTotal}
+                          </span>
+                        </div>
+                      </div>
+                      </>
                     ))}
                   </div>
                 ) : (
@@ -245,7 +305,7 @@ const PublicStudentPage = () => {
             )}
 
             {/* Footer */}
-            <div className="mt-6 p-4 bg-slate-50 rounded-lg text-center border border-slate-200">
+            <div className="mt-6 p-4 bg-slate-50 rounded-lg text-center border border-slate-200 mx-5">
               <div className="flex items-center justify-center gap-2 text-emerald-600 mb-1">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />

@@ -127,6 +127,7 @@ const Exams = () => {
       });
       toast.success('Marks saved!');
       setShowMarksModal(false);
+      fetchData();
     } catch (error) {
       toast.error('Failed to save marks');
     } finally {
@@ -135,10 +136,15 @@ const Exams = () => {
   };
 
   const updateMark = (studentId, subjectIndex, value) => {
+    const subjectMax = Number(selectedExam?.subjects?.[subjectIndex]?.maxMarks);
+    const safeMax = Number.isFinite(subjectMax) && subjectMax > 0 ? subjectMax : 0;
+    const parsed = Number.parseInt(value, 10);
+    const nextMark = Number.isFinite(parsed) ? Math.max(0, Math.min(parsed, safeMax)) : 0;
+
     setMarksRecords(marksRecords.map(r => {
       if (r.studentId === studentId) {
         const newMarks = [...r.marks];
-        newMarks[subjectIndex] = parseInt(value) || 0;
+        newMarks[subjectIndex] = nextMark;
         return { ...r, marks: newMarks };
       }
       return r;
@@ -201,10 +207,15 @@ const Exams = () => {
             <p className="text-sm text-slate-500">{exam.classId?.name} {exam.classId?.section || ''}</p>
             <div className="flex items-center justify-between mt-3">
               <Badge variant="default">{exam.date}</Badge>
-              <span className="text-xs text-slate-500">{exam.subjects?.length || 0} subjects</span>
+              <div className="flex items-center gap-2">
+                {exam.hasMarks && (
+                  <Badge variant="success">Marks Added</Badge>
+                )}
+                <span className="text-xs text-slate-500">{exam.subjects?.length || 0} subjects</span>
+              </div>
             </div>
             <Button size="sm" className="w-full mt-4" onClick={() => openMarksModal(exam)}>
-              Enter Marks
+              {exam.hasMarks ? 'Edit Marks' : 'Add Marks'}
             </Button>
           </Card>
         ))}
