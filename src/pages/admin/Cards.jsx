@@ -273,8 +273,13 @@ const Cards = () => {
         width: template.width,
         height: template.height,
         baseSvgMarkup: template.baseSvgMarkup || '',
+        canvasColor: template.canvasColor || '#ffffff',
+        backCanvasColor: template.backCanvasColor || template.canvasColor || '#ffffff',
+        backBaseSvgMarkup: template.backBaseSvgMarkup || '',
         elements: Array.isArray(template.elements) ? template.elements : [],
-        groups: template.groups && typeof template.groups === 'object' ? template.groups : {}
+        backElements: Array.isArray(template.backElements) ? template.backElements : [],
+        groups: template.groups && typeof template.groups === 'object' ? template.groups : {},
+        backGroups: template.backGroups && typeof template.backGroups === 'object' ? template.backGroups : {}
       };
       const { data } = await adminAPI.createCardTemplate(payload);
       setTemplates((prev) => [data.data, ...prev]);
@@ -371,9 +376,14 @@ const Cards = () => {
         tenantId: selectedTenant,
         width,
         height,
+        canvasColor: '#ffffff',
+        backCanvasColor: '#ffffff',
         baseSvgMarkup: createMode === 'import' ? baseSvgMarkup : '',
+        backBaseSvgMarkup: '',
         elements: [],
-        groups: {}
+        backElements: [],
+        groups: {},
+        backGroups: {}
       };
       const { data } = await adminAPI.createCardTemplate(payload);
       setShowCreateModal(false);

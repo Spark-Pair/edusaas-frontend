@@ -24,6 +24,7 @@ import {
   Pencil,
   Pipette,
   Plus,
+  QrCode,
   Redo2,
   Save,
   Search,
@@ -85,6 +86,19 @@ const CardEditor = () => {
   const [svgMarkup, setSvgMarkup] = useState('');
   const [elements, setElements] = useState([]);
   const [groups, setGroups] = useState({});
+  const [activeSide, setActiveSide] = useState('front');
+  const [frontDesign, setFrontDesign] = useState({
+    canvasColor: '#ffffff',
+    svgMarkup: '',
+    elements: [],
+    groups: {}
+  });
+  const [backDesign, setBackDesign] = useState({
+    canvasColor: '#ffffff',
+    svgMarkup: '',
+    elements: [],
+    groups: {}
+  });
   const [selectedIds, setSelectedIds] = useState([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState([]);
   const [expandedGroupId, setExpandedGroupId] = useState(null);
@@ -160,6 +174,21 @@ const CardEditor = () => {
   const shortcutsPopoverRef = useRef(null);
   const canvasHistoryPopoverRef = useRef(null);
 
+  const getCurrentDesignState = (override = {}) => ({
+    canvasColor: override.canvasColor ?? canvasColor,
+    svgMarkup: override.svgMarkup ?? svgMarkup,
+    elements: cloneHistoryState(override.elements ?? elements),
+    groups: cloneHistoryState(override.groups ?? groups)
+  });
+
+  const getSideDesigns = (override = {}) => {
+    const currentDesign = getCurrentDesignState(override);
+    return {
+      front: override.frontDesign ?? (activeSide === 'front' ? currentDesign : cloneHistoryState(frontDesign)),
+      back: override.backDesign ?? (activeSide === 'back' ? currentDesign : cloneHistoryState(backDesign))
+    };
+  };
+
   const makeSignature = (state = {}) =>
     JSON.stringify({
       name: state.templateName ?? templateName,
@@ -168,10 +197,7 @@ const CardEditor = () => {
       radius: state.canvasRadius ?? canvasRadius,
       borderWidth: state.canvasBorderWidth ?? canvasBorderWidth,
       borderColor: state.canvasBorderColor ?? canvasBorderColor,
-      color: state.canvasColor ?? canvasColor,
-      svg: state.svgMarkup ?? svgMarkup,
-      elements: state.elements ?? elements,
-      groups: state.groups ?? groups
+      sides: getSideDesigns(state)
     });
 
   const makeHistorySnapshot = (override = {}) => ({
@@ -204,6 +230,52 @@ const CardEditor = () => {
     setTimeout(() => {
       isHistoryApplyingRef.current = false;
     }, 0);
+  };
+
+  useEffect(() => {
+    const currentDesign = getCurrentDesignState();
+    if (activeSide === 'front') {
+      setFrontDesign(currentDesign);
+    } else {
+      setBackDesign(currentDesign);
+    }
+  }, [activeSide, canvasColor, svgMarkup, elements, groups]);
+
+  const switchEditorSide = (nextSide) => {
+    if (nextSide === activeSide) return;
+
+    const currentDesign = getCurrentDesignState();
+    const nextFrontDesign = activeSide === 'front' ? currentDesign : cloneHistoryState(frontDesign);
+    const nextBackDesign = activeSide === 'back' ? currentDesign : cloneHistoryState(backDesign);
+    const targetDesign = nextSide === 'front' ? nextFrontDesign : nextBackDesign;
+    const nextSnapshot = {
+      canvasWidth,
+      canvasHeight,
+      canvasRadius,
+      canvasBorderWidth,
+      canvasBorderColor,
+      canvasColor: targetDesign.canvasColor || '#ffffff',
+      svgMarkup: targetDesign.svgMarkup || '',
+      elements: cloneHistoryState(targetDesign.elements || []),
+      groups: cloneHistoryState(targetDesign.groups || {})
+    };
+
+    setFrontDesign(nextFrontDesign);
+    setBackDesign(nextBackDesign);
+    setActiveSide(nextSide);
+    setShowShortcuts(false);
+    setShowCanvasHistory(false);
+    setContextMenu(null);
+    setShowCornerRadiusPopover(false);
+    historySnapshotRef.current = cloneHistoryState(nextSnapshot);
+    lastCommittedSnapshotRef.current = cloneHistoryState(nextSnapshot);
+    if (historyDebounceTimerRef.current) {
+      clearTimeout(historyDebounceTimerRef.current);
+      historyDebounceTimerRef.current = null;
+    }
+    setHistoryPast([]);
+    setHistoryFuture([]);
+    applyHistorySnapshot(nextSnapshot);
   };
 
   useEffect(() => {
@@ -318,9 +390,11 @@ const CardEditor = () => {
           : 2;
         const nextBorderColor = templateData.borderColor || '#94a3b8';
         const nextColor = templateData.canvasColor || '#ffffff';
+        const nextBackColor = templateData.backCanvasColor || templateData.canvasColor || '#ffffff';
         const nextSvg = templateData.baseSvgMarkup || '';
-        const nextElements = Array.isArray(templateData.elements)
-          ? templateData.elements.map((item) => ({
+        const normalizeTemplateElements = (source) =>
+          Array.isArray(source)
+            ? source.map((item) => ({
             ...item,
             textLayout: item.kind === 'text' ? (item.textLayout === 'fixed' ? 'fixed' : 'dynamic') : item.textLayout,
             locked: Boolean(item.locked),
@@ -335,8 +409,23 @@ const CardEditor = () => {
             borderRadiusBottomRight: Number.isFinite(Number(item.borderRadiusBottomRight)) ? Math.max(0, Number(item.borderRadiusBottomRight)) : Math.max(0, Number(item.borderRadius) || 0),
             borderRadiusBottomLeft: Number.isFinite(Number(item.borderRadiusBottomLeft)) ? Math.max(0, Number(item.borderRadiusBottomLeft)) : Math.max(0, Number(item.borderRadius) || 0)
           }))
-          : [];
+            : [];
+        const nextElements = normalizeTemplateElements(templateData.elements);
+        const nextBackElements = normalizeTemplateElements(templateData.backElements);
         const nextGroups = templateData.groups && typeof templateData.groups === 'object' ? templateData.groups : {};
+        const nextBackGroups = templateData.backGroups && typeof templateData.backGroups === 'object' ? templateData.backGroups : {};
+        const nextFrontDesign = {
+          canvasColor: nextColor,
+          svgMarkup: nextSvg,
+          elements: cloneHistoryState(nextElements),
+          groups: cloneHistoryState(nextGroups)
+        };
+        const nextBackDesign = {
+          canvasColor: nextBackColor,
+          svgMarkup: templateData.backBaseSvgMarkup || '',
+          elements: cloneHistoryState(nextBackElements),
+          groups: cloneHistoryState(nextBackGroups)
+        };
 
         setTemplateName(nextName);
         setCanvasWidth(nextWidth);
@@ -348,6 +437,9 @@ const CardEditor = () => {
         setSvgMarkup(nextSvg);
         setElements(nextElements);
         setGroups(nextGroups);
+        setActiveSide('front');
+        setFrontDesign(nextFrontDesign);
+        setBackDesign(nextBackDesign);
         const nextHistorySnapshot = {
           canvasWidth: nextWidth,
           canvasHeight: nextHeight,
@@ -375,10 +467,10 @@ const CardEditor = () => {
             radius: nextRadius,
             borderWidth: nextBorderWidth,
             borderColor: nextBorderColor,
-            color: nextColor,
-            svg: nextSvg,
-            elements: nextElements,
-            groups: nextGroups
+            sides: {
+              front: nextFrontDesign,
+              back: nextBackDesign
+            }
           })
         );
       }
@@ -402,6 +494,7 @@ const CardEditor = () => {
 
     setSaving(true);
     try {
+      const sideDesigns = getSideDesigns();
       const { data } = await adminAPI.updateCardTemplate(templateId, {
         name: templateName.trim(),
         width: canvasWidth,
@@ -409,10 +502,14 @@ const CardEditor = () => {
         borderRadius: canvasRadius,
         borderWidth: canvasBorderWidth,
         borderColor: canvasBorderColor,
-        canvasColor,
-        baseSvgMarkup: svgMarkup || '',
-        elements,
-        groups
+        canvasColor: sideDesigns.front.canvasColor,
+        backCanvasColor: sideDesigns.back.canvasColor,
+        baseSvgMarkup: sideDesigns.front.svgMarkup || '',
+        backBaseSvgMarkup: sideDesigns.back.svgMarkup || '',
+        elements: sideDesigns.front.elements,
+        backElements: sideDesigns.back.elements,
+        groups: sideDesigns.front.groups,
+        backGroups: sideDesigns.back.groups
       });
       setTemplateName(data.data?.name || templateName.trim());
       setBaselineSignature(makeSignature({ templateName: data.data?.name || templateName.trim() }));
@@ -485,6 +582,7 @@ const CardEditor = () => {
         navigate(`/admin/cards?tenantId=${nextTenantId}`);
         return;
       }
+      const sideDesigns = getSideDesigns();
       const { data } = await adminAPI.createCardTemplate({
         name: templateName,
         tenantId: nextTenantId,
@@ -493,10 +591,14 @@ const CardEditor = () => {
         borderRadius: canvasRadius,
         borderWidth: canvasBorderWidth,
         borderColor: canvasBorderColor,
-        canvasColor,
-        baseSvgMarkup: svgMarkup || '',
-        elements,
-        groups
+        canvasColor: sideDesigns.front.canvasColor,
+        backCanvasColor: sideDesigns.back.canvasColor,
+        baseSvgMarkup: sideDesigns.front.svgMarkup || '',
+        backBaseSvgMarkup: sideDesigns.back.svgMarkup || '',
+        elements: sideDesigns.front.elements,
+        backElements: sideDesigns.back.elements,
+        groups: sideDesigns.front.groups,
+        backGroups: sideDesigns.back.groups
       });
       const nextTemplate = data.data;
       const params = new URLSearchParams({
@@ -596,7 +698,7 @@ const CardEditor = () => {
   const selectedGroupFromSingle = selectedElement?.groupId ? groups[selectedElement.groupId] : null;
   const hasUnsavedChanges = useMemo(
     () => makeSignature() !== baselineSignature,
-    [templateName, canvasWidth, canvasHeight, canvasRadius, canvasBorderWidth, canvasBorderColor, canvasColor, svgMarkup, elements, groups, baselineSignature]
+    [templateName, canvasWidth, canvasHeight, canvasRadius, canvasBorderWidth, canvasBorderColor, canvasColor, svgMarkup, elements, groups, frontDesign, backDesign, activeSide, baselineSignature]
   );
 
   useEffect(() => {
@@ -1338,8 +1440,10 @@ const CardEditor = () => {
           ? studentPhotoRatio
           : block.kind === 'logo'
             ? schoolLogoRatio
+            : block.kind === 'qr'
+              ? 1
             : undefined;
-    if (effectiveAspectRatio && ['photo', 'logo', 'image'].includes(block.kind)) {
+    if (effectiveAspectRatio && ['photo', 'logo', 'image', 'qr'].includes(block.kind)) {
       blockHeight = Math.max(20, Math.round(blockWidth / effectiveAspectRatio));
     }
     const id = `${block.type}-${Date.now()}`;
@@ -1383,7 +1487,7 @@ const CardEditor = () => {
       borderRadiusBottomLeft: 8,
       locked: false,
       aspectRatio:
-        ['photo', 'logo', 'image'].includes(block.kind) && blockHeight > 0
+        ['photo', 'logo', 'image', 'qr'].includes(block.kind) && blockHeight > 0
           ? effectiveAspectRatio || (blockWidth / blockHeight)
           : undefined,
       ...overrides
@@ -1419,7 +1523,7 @@ const CardEditor = () => {
     const target = elements.find((item) => item.id === targetElementId);
     if (!target) return;
     const targetKind = getReplacementKind(target);
-    const nextKind = block.kind === 'text' ? 'text' : (['photo', 'logo', 'image_importer'].includes(block.kind) ? 'image' : null);
+    const nextKind = block.kind === 'text' ? 'text' : (['photo', 'logo', 'qr', 'image_importer'].includes(block.kind) ? 'image' : null);
     if (!targetKind || targetKind !== nextKind) return;
 
     if (block.kind === 'image_importer') {
@@ -1436,7 +1540,8 @@ const CardEditor = () => {
             ...item,
             type: block.type,
             kind: block.kind,
-            label: block.label
+            label: block.label,
+            aspectRatio: block.kind === 'qr' ? 1 : item.aspectRatio
           }
           : item
       )
@@ -2005,7 +2110,7 @@ const CardEditor = () => {
 
   const updateSelected = (patch) => {
     if (!selectedElement) return;
-    const isAspectLockedKind = ['photo', 'logo', 'image'].includes(selectedElement.kind);
+    const isAspectLockedKind = ['photo', 'logo', 'image', 'qr'].includes(selectedElement.kind);
     const nextPatch = { ...patch };
 
     if (isAspectLockedKind) {
@@ -2344,11 +2449,12 @@ const CardEditor = () => {
   const renderAlignmentIcon = (Icon) => <Icon className="w-3.5 h-3.5" />;
   function getQuickBlockCategory(block) {
     if (block.type === 'school_name' || block.type === 'school_logo') return 'school';
-    if (block.type === 'student_name' || block.type === 'father_name' || block.type === 'roll_no' || block.type === 'class_name' || block.type === 'student_photo') return 'student';
+    if (block.type === 'student_name' || block.type === 'father_name' || block.type === 'roll_no' || block.type === 'class_name' || block.type === 'student_photo' || block.type === 'qr_code') return 'student';
     return 'custom';
   }
   const getBlockIcon = (block) => {
     if (block.kind === 'text') return Type;
+    if (block.kind === 'qr') return QrCode;
     if (block.kind === 'photo' || block.kind === 'logo' || block.kind === 'image' || block.type === 'import_image') return ImageIcon;
     if (block.type === 'rectangle') return Square;
     if (block.type === 'import_svg') return FileCode2;
@@ -2357,14 +2463,14 @@ const CardEditor = () => {
   function getReplacementKind(element) {
     if (!element) return null;
     if (element.kind === 'text') return 'text';
-    if (['photo', 'logo', 'image'].includes(element.kind)) return 'image';
+    if (['photo', 'logo', 'image', 'qr'].includes(element.kind)) return 'image';
     return null;
   }
   function getReplacementBlocksForElement(element) {
     const kind = getReplacementKind(element);
     if (kind === 'text') return BLOCKS.filter((block) => block.kind === 'text');
     if (kind === 'image') {
-      return BLOCKS.filter((block) => ['photo', 'logo', 'image_importer'].includes(block.kind));
+      return BLOCKS.filter((block) => ['photo', 'logo', 'qr', 'image_importer'].includes(block.kind));
     }
     return [];
   }
@@ -2783,6 +2889,21 @@ const CardEditor = () => {
       );
     }
 
+    if (element.kind === 'qr') {
+      if (lastStudent?.qrCode) {
+        return (
+          <div style={baseStyle} className="overflow-hidden">
+            <img src={lastStudent.qrCode} alt={`${studentName} QR code`} className="w-full h-full object-contain" />
+          </div>
+        );
+      }
+      return (
+        <div style={baseStyle} className="flex items-center justify-center text-xs font-bold text-slate-700 px-2 text-center">
+          QR
+        </div>
+      );
+    }
+
     if (element.kind === 'svg') {
       return (
         <div style={baseStyle} className="overflow-hidden">
@@ -3074,12 +3195,14 @@ const CardEditor = () => {
     return { width, height };
   };
 
-  const buildExportRenderModel = (student) => {
+  const buildExportRenderModel = (student, design) => {
     const values = buildCardDefaultValues(student);
     const byId = {};
     const groupItems = {};
+    const designElements = Array.isArray(design?.elements) ? design.elements : [];
+    const designGroups = design?.groups && typeof design.groups === 'object' ? design.groups : {};
 
-    elements.forEach((element) => {
+    designElements.forEach((element) => {
       const dims = getExportDimensions(element, values);
       const baseLeft = element.centerX ? canvasWidth / 2 - dims.width / 2 : element.x;
       const baseTop = element.y;
@@ -3087,8 +3210,8 @@ const CardEditor = () => {
       byId[element.id] = entry;
 
       let currentGroupId = element.groupId;
-      while (currentGroupId && groups[currentGroupId]) {
-        const group = groups[currentGroupId];
+      while (currentGroupId && designGroups[currentGroupId]) {
+        const group = designGroups[currentGroupId];
         const offsetX = group.x || 0;
         const offsetY = group.y || 0;
         entry.top += offsetY;
@@ -3100,7 +3223,7 @@ const CardEditor = () => {
     });
 
     Object.entries(groupItems).forEach(([groupId, items]) => {
-      const groupConfig = groups[groupId];
+      const groupConfig = designGroups[groupId];
       if (!groupConfig?.centerX || items.length === 0) return;
       const minX = Math.min(...items.map((item) => item.left));
       const maxX = Math.max(...items.map((item) => item.left + item.width));
@@ -3114,7 +3237,7 @@ const CardEditor = () => {
     return { byId, values };
   };
 
-  const renderElementSvg = (element, meta, student, values, clipKey = '') => {
+  const renderElementSvg = (element, meta, student, values, designGroups, clipKey = '') => {
     const width = meta.width;
     const height = meta.height;
     const borderWidth = element.showBorder ? Math.max(1, element.borderWidth || 1) : 0;
@@ -3162,12 +3285,14 @@ const CardEditor = () => {
       return rectMarkup;
     }
 
-    if (element.kind === 'photo' || element.kind === 'logo' || element.kind === 'image') {
+    if (element.kind === 'photo' || element.kind === 'logo' || element.kind === 'image' || element.kind === 'qr') {
       const href = element.kind === 'photo'
         ? student?.studentPhoto
         : element.kind === 'logo'
           ? tenant?.schoolLogo
-          : element.imageSrc;
+          : element.kind === 'qr'
+            ? student?.qrCode
+            : element.imageSrc;
       if (href) {
         return `${rectMarkup}${clipDefMarkup}<image href="${escapeXml(href)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet"${clipAttr} />`;
       }
@@ -3175,7 +3300,9 @@ const CardEditor = () => {
         ? `${(student?.firstName || 'S').charAt(0)}${(student?.lastName || 'T').charAt(0)}`
         : element.kind === 'logo'
           ? (tenant?.schoolName || 'Logo')
-          : 'Image';
+          : element.kind === 'qr'
+            ? 'QR'
+            : 'Image';
       return `${rectMarkup}<text x="${width / 2}" y="${height / 2}" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="600" fill="#334155">${escapeXml(fallback)}</text>`;
     }
 
@@ -3187,7 +3314,7 @@ const CardEditor = () => {
     const { prefix, base } = getTextParts(element, values);
     const prefixText = escapeXml(prefix);
     const baseText = escapeXml(base);
-    const isCentered = element.centerX || groups[element.groupId]?.centerX;
+    const isCentered = element.centerX || designGroups[element.groupId]?.centerX;
     const textAnchor = isCentered ? 'middle' : 'start';
     const textX = isCentered ? width / 2 : (element.paddingX || 0);
     const textY = (element.paddingY || 0) + (element.fontSize || 14);
@@ -3205,35 +3332,37 @@ const CardEditor = () => {
     }
     setExporting(true);
     try {
+      const sideDesigns = getSideDesigns();
       const gap = 24;
       const totalWidth = selectedExportStudents.length * canvasWidth + (selectedExportStudents.length - 1) * gap;
-      const totalHeight = canvasHeight;
-      const encodedBaseSvg = svgMarkup ? encodeURIComponent(svgMarkup) : '';
-      const cardsMarkup = selectedExportStudents.map((student, index) => {
-        const model = buildExportRenderModel(student);
-      const overlay = elements
+      const totalHeight = canvasHeight * 2;
+      const renderCardSideMarkup = (student, studentIndex, sideKey, yOffset, design) => {
+        const designElements = Array.isArray(design?.elements) ? design.elements : [];
+        const designGroups = design?.groups && typeof design.groups === 'object' ? design.groups : {};
+        const encodedBaseSvg = design?.svgMarkup ? encodeURIComponent(design.svgMarkup) : '';
+        const model = buildExportRenderModel(student, design);
+        const overlay = designElements
           .map((element, elementIndex) => {
             const meta = model.byId[element.id];
             if (!meta) return '';
-            const rotation = (element.rotation || 0) + (groups[element.groupId]?.rotation || 0);
+            const rotation = (element.rotation || 0) + (designGroups[element.groupId]?.rotation || 0);
             const translate = `translate(${meta.left} ${meta.top})`;
             const rotate = rotation ? ` rotate(${rotation} ${meta.width / 2} ${meta.height / 2})` : '';
-            const clipKey = `${index}-${elementIndex}-${element.id}`;
-            return `<g transform="${translate}${rotate}">${renderElementSvg(element, meta, student, model.values, clipKey)}</g>`;
+            const clipKey = `${studentIndex}-${sideKey}-${elementIndex}-${element.id}`;
+            return `<g transform="${translate}${rotate}">${renderElementSvg(element, meta, student, model.values, designGroups, clipKey)}</g>`;
           })
           .join('');
-        const x = index * (canvasWidth + gap);
-        const clipId = `card-clip-${index}`;
+        const clipId = `card-clip-${studentIndex}-${sideKey}`;
         const baseLayer = encodedBaseSvg
           ? `<image href="data:image/svg+xml;utf8,${encodedBaseSvg}" x="0" y="0" width="${canvasWidth}" height="${canvasHeight}" preserveAspectRatio="none" />`
           : '';
-        return `<g transform="translate(${x} 0)">
+        return `<g transform="translate(0 ${yOffset})">
           <defs>
             <clipPath id="${clipId}">
               <rect x="0" y="0" width="${canvasWidth}" height="${canvasHeight}" rx="${canvasRadius}" ry="${canvasRadius}" />
             </clipPath>
           </defs>
-          <rect x="0" y="0" width="${canvasWidth}" height="${canvasHeight}" rx="${canvasRadius}" ry="${canvasRadius}" fill="${canvasColor || '#ffffff'}" />
+          <rect x="0" y="0" width="${canvasWidth}" height="${canvasHeight}" rx="${canvasRadius}" ry="${canvasRadius}" fill="${design?.canvasColor || '#ffffff'}" />
           <g clip-path="url(#${clipId})">
             ${baseLayer}
             ${overlay}
@@ -3241,6 +3370,13 @@ const CardEditor = () => {
           ${canvasBorderWidth > 0
             ? `<rect x="${canvasBorderWidth / 2}" y="${canvasBorderWidth / 2}" width="${Math.max(0, canvasWidth - canvasBorderWidth)}" height="${Math.max(0, canvasHeight - canvasBorderWidth)}" rx="${Math.max(0, canvasRadius - canvasBorderWidth / 2)}" ry="${Math.max(0, canvasRadius - canvasBorderWidth / 2)}" fill="none" stroke="${canvasBorderColor}" stroke-width="${canvasBorderWidth}" />`
             : ''}
+        </g>`;
+      };
+      const cardsMarkup = selectedExportStudents.map((student, index) => {
+        const x = index * (canvasWidth + gap);
+        return `<g transform="translate(${x} 0)">
+          ${renderCardSideMarkup(student, index, 'front', 0, sideDesigns.front)}
+          ${renderCardSideMarkup(student, index, 'back', canvasHeight, sideDesigns.back)}
         </g>`;
       }).join('');
 
@@ -3286,15 +3422,35 @@ const CardEditor = () => {
           Back
         </Button>
         <div className="flex justify-center">
-          <input
-            type="text"
-            value={templateName}
-            onChange={(e) => setTemplateName(e.target.value)}
-            className="h-10 w-full max-w-xl px-4 text-sm border border-slate-300 rounded-lg bg-white"
-            placeholder="Template name"
-            data-tooltip="Template name"
-            data-tooltip-direction="bottom"
-          />
+          <div className="w-full max-w-xl flex items-center gap-2">
+            <input
+              type="text"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              className="h-10 flex-1 px-4 text-sm border border-slate-300 rounded-lg bg-white"
+              placeholder="Template name"
+              data-tooltip="Template name"
+              data-tooltip-direction="bottom"
+            />
+            <div className="inline-flex items-center rounded-lg border border-slate-300 bg-white p-1">
+              <button
+                type="button"
+                onClick={() => switchEditorSide('front')}
+                data-tooltip="Edit front side"
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${activeSide === 'front' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                Front
+              </button>
+              <button
+                type="button"
+                onClick={() => switchEditorSide('back')}
+                data-tooltip="Edit back side"
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${activeSide === 'back' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                Back
+              </button>
+            </div>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {hasUnsavedChanges && (

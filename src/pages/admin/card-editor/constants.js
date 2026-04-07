@@ -19,6 +19,7 @@ export const BLOCKS = [
   { type: 'roll_no', label: 'Roll Number', kind: 'text', width: 180, height: 30 },
   { type: 'class_name', label: 'Class Name', kind: 'text', width: 180, height: 30 },
   { type: 'student_photo', label: 'Student Photo', kind: 'photo', width: 108, height: 108 },
+  { type: 'qr_code', label: 'QR Code', kind: 'qr', width: 96, height: 96 },
   { type: 'school_logo', label: 'School Logo', kind: 'logo', width: 72, height: 72 },
   { type: 'text', label: 'Custom Text', kind: 'text', width: 180, height: 30, text: 'Custom Text' },
   { type: 'rectangle', label: 'Rectangle', kind: 'rectangle', width: 240, height: 120 },
